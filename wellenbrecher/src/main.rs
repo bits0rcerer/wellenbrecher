@@ -8,6 +8,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::firewall::ConnectionLimit;
 
+mod canvas;
 mod cli;
 mod firewall;
 

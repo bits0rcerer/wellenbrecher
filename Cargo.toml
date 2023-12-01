@@ -23,5 +23,8 @@ rpath = false
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 eyre = "0.6.9"
+thiserror = "1.0.50"
 
 clap = { version = "4.4.8", features = ["derive"] }
+
+shared_memory = "0.12.4"

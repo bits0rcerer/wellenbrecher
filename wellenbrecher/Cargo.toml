@@ -9,10 +9,16 @@ description = "A capable Pixelflut server leveraging the linux io_uring interfac
 tracing.workspace = true
 tracing-subscriber.workspace = true
 eyre.workspace = true
+thiserror.workspace = true
 clap.workspace = true
+shared_memory.workspace = true
 
 nftables = "0.2.4"
 
 socket2 = "0.5.5"
 io-uring = "0.6.2"
 core_affinity = "0.8.1"
+
+bytemuck = "1.14.0"
+bytemuck_derive = "1.5.0"
+smallvec = "1.11.2"
