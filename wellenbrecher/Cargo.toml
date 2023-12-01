@@ -1,0 +1,18 @@
+[package]
+name = "wellenbrecher"
+version = "0.1.0"
+edition = "2021"
+authors = ["bits0rcerer <25325997+bits0rcerer@users.noreply.github.com>"]
+description = "A capable Pixelflut server leveraging the linux io_uring interface"
+
+[dependencies]
+tracing.workspace = true
+tracing-subscriber.workspace = true
+eyre.workspace = true
+clap.workspace = true
+
+nftables = "0.2.4"
+
+socket2 = "0.5.5"
+io-uring = "0.6.2"
+core_affinity = "0.8.1"

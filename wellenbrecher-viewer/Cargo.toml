@@ -1,0 +1,11 @@
+[package]
+name = "wellenbrecher-viewer"
+version = "0.1.0"
+edition = "2021"
+authors = ["bits0rcerer <25325997+bits0rcerer@users.noreply.github.com>"]
+
+[dependencies]
+tracing.workspace = true
+tracing-subscriber.workspace = true
+eyre.workspace = true
+clap.workspace = true

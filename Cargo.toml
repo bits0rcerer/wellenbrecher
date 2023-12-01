@@ -1,0 +1,27 @@
+[workspace]
+
+members = [
+    "wellenbrecher",
+    "wellenbrecher-viewer",
+]
+
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = 'unwind'
+incremental = false
+codegen-units = 1
+rpath = false
+
+[workspace.dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+eyre = "0.6.9"
+
+clap = { version = "4.4.8", features = ["derive"] }
