@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-    "wellenbrecher",
+    "wellenbrecher", "wellenbrecher-canvas",
     "wellenbrecher-viewer",
 ]
 

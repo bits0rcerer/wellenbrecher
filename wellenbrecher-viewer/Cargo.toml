@@ -4,8 +4,20 @@ version = "0.1.0"
 edition = "2021"
 authors = ["bits0rcerer <25325997+bits0rcerer@users.noreply.github.com>"]
 
+resolver = "2"
+
 [dependencies]
+wellenbrecher-canvas = { path = "../wellenbrecher-canvas" }
+
 tracing.workspace = true
 tracing-subscriber.workspace = true
 eyre.workspace = true
 clap.workspace = true
+
+winit = "0.28.7"
+wgpu = "0.18"
+pollster = "0.3"
+
+rand = "0.8.5"
+bytemuck = "1.14.0"
+bytemuck_derive = "1.5.0"

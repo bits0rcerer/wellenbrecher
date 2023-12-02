@@ -1,5 +1,15 @@
+use clap::Parser;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
+use wgpu::Backends;
+use winit::dpi::LogicalSize;
+use winit::event_loop::EventLoop;
+use winit::window::WindowBuilder;
+
+use wellenbrecher_canvas::{Bgra, Canvas};
+use wellenbrecher_viewer::run;
+
+mod cli;
 
 fn setup_logging() -> eyre::Result<()> {
     if cfg!(debug_assertions) {
@@ -35,5 +45,38 @@ fn setup_logging() -> eyre::Result<()> {
 fn main() -> eyre::Result<()> {
     setup_logging()?;
 
-    Ok(())
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+        .with_decorations(true)
+        .with_min_inner_size(LogicalSize::new(1280, 720))
+        .with_resizable(true)
+        .with_title("Wellenbrecher")
+        .build(&event_loop)
+        .unwrap();
+
+    let args = cli::Args::parse();
+    if args.list_gpus {
+        let instance = wgpu::Instance::default();
+
+        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        for (i, a) in instance
+            .enumerate_adapters(Backends::all())
+            .filter(|a| a.is_surface_supported(&surface))
+            .enumerate()
+        {
+            println!("{i}: {:?}", a.get_info())
+        }
+
+        return Ok(());
+    }
+
+    let canvas = Canvas::open(
+        "/tmp/wellenbrecher-canvas".as_ref(),
+        true,
+        args.width.get(),
+        args.height.get(),
+        Bgra::from_bw(255),
+    )?;
+
+    pollster::block_on(run(canvas, event_loop, window, args.gpu_index))
 }

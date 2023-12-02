@@ -5,7 +5,11 @@ edition = "2021"
 authors = ["bits0rcerer <25325997+bits0rcerer@users.noreply.github.com>"]
 description = "A capable Pixelflut server leveraging the linux io_uring interface"
 
+resolver = "2"
+
 [dependencies]
+wellenbrecher-canvas = { path = "../wellenbrecher-canvas" }
+
 tracing.workspace = true
 tracing-subscriber.workspace = true
 eyre.workspace = true

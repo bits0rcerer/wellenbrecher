@@ -1,0 +1,14 @@
+[package]
+name = "wellenbrecher-canvas"
+version = "0.1.0"
+edition = "2021"
+
+resolver = "2"
+
+[dependencies]
+tracing.workspace = true
+thiserror.workspace = true
+shared_memory.workspace = true
+
+bytemuck = "1.14.0"
+bytemuck_derive = "1.5.0"

@@ -1,14 +1,17 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use nftables::helper::NftablesError;
 use tracing::{debug, Level};
 use tracing_subscriber::EnvFilter;
 
+use wellenbrecher_canvas::{Bgra, Canvas};
+
 use crate::firewall::ConnectionLimit;
 
-mod canvas;
 mod cli;
 mod firewall;
 

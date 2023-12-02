@@ -84,6 +84,7 @@ pub struct Canvas {
     width: u32,
     height: u32,
     len: usize,
+    #[allow(dead_code)]
     shared_memory: Shmem,
     data: *mut Bgra,
     user_id_map: *mut UserID,
@@ -97,7 +98,7 @@ impl Canvas {
         width: u32,
         height: u32,
         fill: Bgra,
-    ) -> eyre::Result<Self> {
+    ) -> Result<Self, CanvasError> {
         let canvas_size = (width * height) as usize * std::mem::size_of::<Bgra>();
         let uid_map_size = (width * height) as usize * std::mem::size_of::<UserID>();
         let size = canvas_size + uid_map_size;
@@ -106,11 +107,11 @@ impl Canvas {
             .size(size)
             .flink(canvas_path)
             .create()
-            .map(|mut m| {
+            .map(|m| {
                 unsafe {
-                    (*slice_from_raw_parts_mut(m.as_ptr() as *mut Bgra, size)).fill(fill);
+                    (*slice_from_raw_parts_mut(m.as_ptr() as *mut Bgra, (width * height) as usize))
+                        .fill(fill);
                 }
-
                 m
             });
         let shared_memory = match shared_memory {
@@ -124,7 +125,7 @@ impl Canvas {
         let mut shared_memory = match shared_memory {
             Ok(m) => m,
             Err(e) => {
-                error!("unable to open or create canvas \"{:?}\": {e}", canvas_path);
+                error!("unable to open or create canvas {:?}: {e}", canvas_path);
                 return Err(e.into());
             }
         };
@@ -189,13 +190,33 @@ impl Canvas {
     }
 
     #[inline]
-    pub fn slice(&self) -> &[Bgra] {
+    pub fn pixel_slice(&self) -> &[Bgra] {
         unsafe { &*slice_from_raw_parts(self.data, self.len) }
+    }
+
+    #[inline]
+    pub fn pixel_byte_slice(&self) -> &[u8] {
+        unsafe {
+            &*slice_from_raw_parts(
+                self.data as *const _,
+                self.len * std::mem::size_of::<Bgra>(),
+            )
+        }
     }
 
     #[inline]
     pub fn user_id_slice(&self) -> &[UserID] {
         unsafe { &*slice_from_raw_parts(self.user_id_map, self.len) }
+    }
+
+    #[inline]
+    pub fn user_id_byte_slice(&self) -> &[u8] {
+        unsafe {
+            &*slice_from_raw_parts(
+                self.user_id_map as *const _,
+                self.len * std::mem::size_of::<UserID>(),
+            )
+        }
     }
 
     #[inline]
@@ -209,8 +230,10 @@ impl Canvas {
     }
 }
 
-#[derive(Debug, Copy, Clone, Error)]
+#[derive(Debug, Error)]
 pub enum CanvasError {
     #[error("pixel ({x}, {y}) out of bounds")]
     PixelOutOfBounds { x: u32, y: u32 },
+    #[error("mapping error: {0}")]
+    Mapping(#[from] ShmemError),
 }
