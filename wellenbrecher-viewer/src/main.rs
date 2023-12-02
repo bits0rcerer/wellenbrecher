@@ -2,7 +2,6 @@ use clap::Parser;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 use wgpu::Backends;
-use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
 
@@ -48,7 +47,6 @@ fn main() -> eyre::Result<()> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_decorations(true)
-        .with_min_inner_size(LogicalSize::new(1280, 720))
         .with_resizable(true)
         .with_title("Wellenbrecher")
         .build(&event_loop)

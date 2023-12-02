@@ -30,7 +30,7 @@ impl From<u32> for Bgra {
 impl From<Bgra> for u32 {
     #[inline]
     fn from(value: Bgra) -> u32 {
-        (value.b as u32) << 24 | (value.g as u32) << 16 | (value.g as u32) << 8 | (value.a as u32)
+        (value.b as u32) << 24 | (value.g as u32) << 16 | (value.r as u32) << 8 | (value.a as u32)
     }
 }
 

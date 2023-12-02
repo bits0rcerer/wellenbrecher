@@ -60,4 +60,12 @@ You can get an elevated shell with:
     /// TCP Socket backlog
     #[arg(long, default_value_t = unsafe { NonZeroU32::new_unchecked(128) })]
     pub tcp_accept_backlog: NonZeroU32,
+
+    /// Canvas shared memory file link
+    #[arg(short = 'l', long = "canvas-file-link", default_value_t = String::from("/tmp/wellenbrecher-canvas"))]
+    pub canvas_file_link: String,
+
+    /// Keep canvas shared memory file link
+    #[arg(long = "keep-canvas-file-link", default_value_t = false)]
+    pub keep_canvas_file_link: bool,
 }

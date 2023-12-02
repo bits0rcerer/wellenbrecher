@@ -147,7 +147,7 @@ impl State {
 
         let canvas_texture = Texture::new(
             &device,
-            TextureFormat::Rgba8UnormSrgb,
+            TextureFormat::Bgra8UnormSrgb,
             canvas.width(),
             canvas.height(),
             Some("canvas_texture"),
@@ -245,19 +245,19 @@ impl State {
             contents: bytemuck::cast_slice(&[
                 Vertex {
                     position: [1.0, 0.0],
-                    tex_coords: [1.0, 0.0],
-                },
-                Vertex {
-                    position: [1.0, 1.0],
                     tex_coords: [1.0, 1.0],
                 },
                 Vertex {
+                    position: [1.0, 1.0],
+                    tex_coords: [1.0, 0.0],
+                },
+                Vertex {
                     position: [0.0, 0.0],
-                    tex_coords: [0.0, 0.0],
+                    tex_coords: [0.0, 1.0],
                 },
                 Vertex {
                     position: [0.0, 1.0],
-                    tex_coords: [0.0, 1.0],
+                    tex_coords: [0.0, 0.0],
                 },
             ]),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
@@ -310,19 +310,19 @@ impl State {
                 bytemuck::cast_slice(&[
                     Vertex {
                         position: [x_offset + x, y_offset],
-                        tex_coords: [1.0, 0.0],
-                    },
-                    Vertex {
-                        position: [x_offset + x, y_offset + y],
                         tex_coords: [1.0, 1.0],
                     },
                     Vertex {
+                        position: [x_offset + x, y_offset + y],
+                        tex_coords: [1.0, 0.0],
+                    },
+                    Vertex {
                         position: [x_offset, y_offset],
-                        tex_coords: [0.0, 0.0],
+                        tex_coords: [0.0, 1.0],
                     },
                     Vertex {
                         position: [x_offset, y_offset + y],
-                        tex_coords: [0.0, 1.0],
+                        tex_coords: [0.0, 0.0],
                     },
                 ]),
             );
