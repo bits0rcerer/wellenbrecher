@@ -5,8 +5,8 @@ use wgpu::Backends;
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
 
+use seebruecke::run;
 use wellenbrecher_canvas::{Bgra, Canvas};
-use wellenbrecher_viewer::run;
 
 mod cli;
 

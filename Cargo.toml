@@ -1,8 +1,9 @@
 [workspace]
 
 members = [
-    "wellenbrecher", "wellenbrecher-canvas",
-    "wellenbrecher-viewer",
+    "wellenbrecher",
+    "wellenbrecher-canvas",
+    "seebruecke",
 ]
 
 resolver = "2"
