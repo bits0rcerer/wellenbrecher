@@ -22,60 +22,6 @@ pub enum Command {
 impl TryFrom<&str> for Command {
     type Error = eyre::Report;
 
-    #[cfg(feature = "simd_decoding")]
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        if value.len() < 4 {
-            return Err(eyre::eyre!("unknown command \"{value}\""));
-        }
-
-        let head = unsafe { (value.as_ptr() as *const u32).read_unaligned() };
-
-        if head & simd_decoding::PX_VERB_MASK == simd_decoding::PX_VERB {
-            let (_, args) = value.split_at(3);
-            let mut splits = args.split(' ');
-
-            let x = match splits.next() {
-                Some(digits) if digits.len() <= simd_decoding::MAX_DECIMAL_STRING_LENGTH => {
-                    simd_decoding::parse_u16_from_dec_str_simd(digits)?
-                }
-                Some(digits) => {
-                    return Err(eyre::eyre!("x coordinate to out of range \"{digits}\""));
-                }
-                None => return Err(eyre::eyre!("invalid PX command \"{value}\"")),
-            };
-
-            let y = match splits.next() {
-                Some(digits) if digits.len() <= simd_decoding::MAX_DECIMAL_STRING_LENGTH => {
-                    simd_decoding::parse_u16_from_dec_str_simd(digits)?
-                }
-                Some(digits) => {
-                    return Err(eyre::eyre!("y coordinate to out of range \"{digits}\""));
-                }
-                None => return Err(eyre::eyre!("invalid PX command \"{value}\"")),
-            };
-
-            return match splits.next() {
-                None => Ok(Command::GetPixel { x, y }),
-                Some(digits) => Ok(Command::SetPixel {
-                    x,
-                    y,
-                    color: simd_decoding::parse_color_from_str_simd(digits)?,
-                }),
-            };
-        }
-
-        if head == simd_decoding::HELP_VERB {
-            return Ok(Command::Help);
-        }
-
-        if head == simd_decoding::SIZE_VERB {
-            return Ok(Command::Size);
-        }
-
-        Err(eyre::eyre!("invalid command \"{}\"", value))
-    }
-
-    #[cfg(not(feature = "simd_decoding"))]
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value.as_bytes() {
             [b'H', b'E', b'L', b'P'] => Ok(Command::Help),
