@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use wellenbrecher_canvas::Bgra;
 
-use crate::command::Command;
+use crate::ring::command::Command;
 
 #[derive(Debug)]
 pub struct CommandRing {

@@ -1,9 +1,8 @@
 #![feature(vec_into_raw_parts)]
 
-use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::num::{NonZeroU32, NonZeroUsize};
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
+use std::num::NonZeroU32;
+use std::os::fd::IntoRawFd;
 use std::os::raw::c_int;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -11,23 +10,25 @@ use std::thread;
 
 use clap::Parser;
 use nftables::helper::NftablesError;
-use os_pipe::PipeWriter;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
-use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn, Level};
 use tracing_subscriber::EnvFilter;
 
+use wellenbrecher_canvas::{Bgra, Canvas};
+
 use crate::cli::Args;
 use crate::firewall::ConnectionLimit;
-use crate::worker::{worker, NewClientMessage, WorkerMessage};
+use crate::ring::pixelflut_connection_handler::PixelflutConnectionHandler;
+use crate::ring::pixelflut_ring_bridge::NewClientMessage;
+use crate::ring::write_buffer_drop::WriteBufferDrop;
 
 mod cli;
-mod command;
-mod command_ring;
 mod firewall;
-mod worker;
+mod ring;
 
 const HELP_TEXT: &[u8] = br#"Welcome to Pixelflut!
 
@@ -197,17 +198,14 @@ fn main() -> eyre::Result<()> {
         Some(cores) => cores,
         None => print_and_return_error!("unable to get core ids"),
     };
-    let main_core = workers.pop().unwrap();
-    core_affinity::set_for_current(main_core);
-
-    let cores = NonZeroUsize::new(workers.len()).unwrap();
+    workers.shuffle(&mut thread_rng());
 
     let mut workers = workers
         .into_iter()
         .enumerate()
-        .take(args.threads.unwrap_or(cores).get())
+        .take_while(|(i, _)| args.threads.is_none() || *i < args.threads.unwrap().get())
         .map(|(i, core)| {
-            let (rx, tx) = os_pipe::pipe().expect("unable to create pipe");
+            let (tx, rx) = ring::pixelflut_ring_bridge::new().expect("unable to create bridge");
             let args = args.clone();
             (
                 tx,
@@ -217,7 +215,30 @@ fn main() -> eyre::Result<()> {
                     } else {
                         warn!("[worker: {i}] unable to bind core {core:?}");
                     }
-                    worker(rx, args, i)
+
+                    let canvas = match Canvas::open(
+                        args.canvas_file_link.as_ref(),
+                        args.keep_canvas_file_link,
+                        args.width.get(),
+                        args.height.get(),
+                        Bgra::default(),
+                    ) {
+                        Ok(canvas) => canvas,
+                        Err(e) => return Err(e.into()),
+                    };
+
+                    let mut ring = match ring::pixel_flut_ring::Ring::new(
+                        args.io_uring_size,
+                        None,
+                        rx,
+                        PixelflutConnectionHandler::new(canvas),
+                        WriteBufferDrop,
+                    ) {
+                        Ok(ring) => ring,
+                        Err(e) => return Err(e.into()),
+                    };
+
+                    ring.run()
                 }),
             )
         })
@@ -229,9 +250,7 @@ fn main() -> eyre::Result<()> {
         .block_on(async_main(args, workers.as_mut_slice()))?;
 
     for (i, (mut tx, join_handle)) in workers.into_iter().enumerate() {
-        let msg = Box::new(WorkerMessage::Exit);
-        let raw = Box::into_raw(msg);
-        tx.write_all(&(raw as u64).to_be_bytes())?;
+        tx.signal_exit()?;
 
         match join_handle.join() {
             Ok(Ok(())) => {}
@@ -246,7 +265,10 @@ fn main() -> eyre::Result<()> {
 
 async fn async_main(
     args: Args,
-    workers: &mut [(PipeWriter, thread::JoinHandle<eyre::Result<()>>)],
+    workers: &mut [(
+        ring::pixelflut_ring_bridge::Sender,
+        thread::JoinHandle<eyre::Result<()>>,
+    )],
 ) -> eyre::Result<()> {
     let clients: Arc<RwLock<Vec<Arc<UserState>>>> = Default::default();
 
@@ -291,7 +313,7 @@ async fn async_main(
 
 async fn accept_client(
     clients: Arc<RwLock<Vec<Arc<UserState>>>>,
-    tx: &mut PipeWriter,
+    tx: &mut ring::pixelflut_ring_bridge::Sender,
     ipv4_mask: Ipv4Addr,
     ipv6_mask: Ipv6Addr,
     buffer_size: usize,
@@ -305,18 +327,13 @@ async fn accept_client(
         get_or_create_user_state(clients.as_mut(), address.ip(), ipv4_mask, ipv6_mask)
     };
 
-    let msg = Box::new(WorkerMessage::NewClient(NewClientMessage {
+    let msg = NewClientMessage {
         socket_fd,
         address,
         uid,
         state,
         buffer_size,
-    }));
-    let raw = Box::into_raw(msg);
+    };
 
-    let mut tx = unsafe { tokio_pipe::PipeWrite::from_raw_fd(tx.as_raw_fd()) };
-    tx.write_u64(raw as u64).await?;
-
-    _ = tx.into_raw_fd();
-    Ok(())
+    tx.signal_new_client(msg).await
 }

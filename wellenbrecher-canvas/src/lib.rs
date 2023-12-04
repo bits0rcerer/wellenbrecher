@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::path::Path;
 use std::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
 
@@ -88,6 +89,35 @@ pub struct Canvas {
     shared_memory: Shmem,
     data: *mut Bgra,
     user_id_map: *mut UserID,
+}
+
+impl Debug for Canvas {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            write!(
+                f,
+                r"Canvas: {{
+    width: {},
+    height: {},
+    shared_memory: {},
+    shared_memory_owner: {},
+}}",
+                self.width,
+                self.height,
+                self.shared_memory.get_os_id(),
+                self.shared_memory.is_owner()
+            )
+        } else {
+            write!(
+                f,
+                r"Canvas: {{ width: {}, height: {}, shared_memory: {}, shared_memory_owner: {} }}",
+                self.width,
+                self.height,
+                self.shared_memory.get_os_id(),
+                self.shared_memory.is_owner()
+            )
+        }
+    }
 }
 
 impl Canvas {

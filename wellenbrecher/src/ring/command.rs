@@ -1,14 +1,14 @@
 #[cfg(not(feature = "simd_decoding"))]
 use std::str::FromStr;
 
+use io_uring::opcode;
 use io_uring::squeue::PushError;
 use io_uring::types::Fd;
-use io_uring::{opcode, SubmissionQueue};
 use thiserror::Error;
 
 use wellenbrecher_canvas::{Bgra, Canvas, CanvasError};
 
-use crate::worker::WorkerRingUserData;
+use crate::ring::SubmissionQueueSubmitter;
 use crate::HELP_TEXT;
 
 #[derive(Debug)]
@@ -127,46 +127,62 @@ impl TryFrom<&str> for Command {
 
 impl Command {
     #[inline]
-    pub fn handle_command(
+    pub fn handle_command<D, W: Fn(&mut io_uring::squeue::Entry, D)>(
         self,
         canvas: &mut Canvas,
         socket_fd: Fd,
-        ring_submission: &mut SubmissionQueue,
+        submitter: &mut SubmissionQueueSubmitter<D, W>,
         user_id: u32,
     ) -> Result<(), CommandExecutionError> {
         match self {
-            Command::Help => unsafe {
+            Command::Help => {
                 let write =
                     opcode::Write::new(socket_fd, HELP_TEXT.as_ptr(), HELP_TEXT.len() as u32)
                         .build()
-                        .user_data(WorkerRingUserData::Write(None).into());
-                ring_submission.push(&write)?
-            },
-            Command::Size => {
-                let msg = format!("SIZE {} {}\n", canvas.width(), canvas.height()).into_bytes();
-                unsafe {
-                    let write = opcode::Write::new(socket_fd, msg.as_ptr(), msg.len() as u32)
-                        .build()
-                        .user_data(WorkerRingUserData::Write(Some(msg)).into());
+                        .user_data(
+                            crate::ring::pixel_flut_ring::UserData::write_buffer_drop(None).into(),
+                        );
 
-                    ring_submission.push(&write)?
+                unsafe {
+                    submitter.push_raw(write)?;
                 }
+                Ok(())
             }
-            Command::SetPixel { x, y, color } => canvas.set_pixel(x, y, color, user_id)?,
+            Command::Size => {
+                let msg = format!("SIZE {} {}\n", canvas.width(), canvas.height())
+                    .into_boxed_str()
+                    .into_boxed_bytes();
+                let write = opcode::Write::new(socket_fd, msg.as_ptr(), msg.len() as u32)
+                    .build()
+                    .user_data(
+                        crate::ring::pixel_flut_ring::UserData::write_buffer_drop(Some(msg)).into(),
+                    );
+
+                unsafe {
+                    submitter.push_raw(write)?;
+                }
+                Ok(())
+            }
+            Command::SetPixel { x, y, color } => {
+                canvas.set_pixel(x, y, color, user_id).map_err(|e| e.into())
+            }
             Command::GetPixel { x, y } => {
                 let color = u32::from(canvas.pixel(x, y).unwrap_or_default());
-                let msg = format!("PX {x} {y} {color:0>8x}\n").into_bytes();
+                let msg = format!("PX {x} {y} {color:0>8x}\n")
+                    .into_boxed_str()
+                    .into_boxed_bytes();
+                let write = opcode::Write::new(socket_fd, msg.as_ptr(), msg.len() as u32)
+                    .build()
+                    .user_data(
+                        crate::ring::pixel_flut_ring::UserData::write_buffer_drop(Some(msg)).into(),
+                    );
+
                 unsafe {
-                    let write = opcode::Write::new(socket_fd, msg.as_ptr(), msg.len() as u32)
-                        .build()
-                        .user_data(WorkerRingUserData::Write(Some(msg)).into());
-
-                    ring_submission.push(&write)?
+                    submitter.push_raw(write)?;
                 }
+                Ok(())
             }
-        };
-
-        Ok(())
+        }
     }
 }
 
