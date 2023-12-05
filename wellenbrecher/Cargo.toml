@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["bits0rcerer <25325997+bits0rcerer@users.noreply.github.com>"]
 description = "A capable Pixelflut server leveraging the linux io_uring interface"
+license = 'GPL-3'
 
 resolver = "2"
 
