@@ -19,7 +19,6 @@ clap.workspace = true
 shared_memory.workspace = true
 
 nftables = "0.2.4"
-os_pipe = "1.1.4"
 
 socket2 = "0.5.5"
 io-uring = "0.6.2"
@@ -29,14 +28,9 @@ bytemuck = "1.14.0"
 bytemuck_derive = "1.5.0"
 smallvec = "1.11.2"
 
-tokio = { version = "1.34.0", features = ["rt", "net", "macros", "signal", "io-util", "sync", "time"] }
-tokio-util = "0.7.10"
-tokio-pipe = "0.2.12"
-
 paste = "1.0.14"
-ctrlc = "3.4.1"
-
-hyper = "1.0.1"
-ring = "0.17.6"
+libc = "0.2.150"
 take_mut = "0.2.2"
+
 rand = "0.8.5"
+log = "0.4.20"

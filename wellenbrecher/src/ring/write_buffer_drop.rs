@@ -21,9 +21,9 @@ impl RingOperation for WriteBufferDrop {
         _: io_uring::cqueue::Entry,
         buf: Self::RingData,
         _: SubmissionQueueSubmitter<Self::RingData, W>,
-    ) -> ControlFlow {
+    ) -> (ControlFlow, Option<Self::RingData>) {
         drop(buf);
-        ControlFlow::Continue
+        (ControlFlow::Continue, None)
     }
 
     fn on_teardown_completion<W: Fn(&mut Entry, Self::RingData)>(

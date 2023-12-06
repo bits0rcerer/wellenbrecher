@@ -68,4 +68,8 @@ You can get an elevated shell with:
     /// Keep canvas shared memory file link
     #[arg(long = "keep-canvas-file-link", default_value_t = false)]
     pub keep_canvas_file_link: bool,
+
+    /// Hide the banner
+    #[arg(long = "no-banner", default_value_t = false)]
+    pub no_banner: bool,
 }

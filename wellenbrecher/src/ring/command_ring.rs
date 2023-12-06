@@ -1,7 +1,9 @@
 use std::slice::from_raw_parts;
 
 use paste::paste;
+use rand::{thread_rng, RngCore};
 use thiserror::Error;
+use tracing::trace;
 
 use wellenbrecher_canvas::Bgra;
 
@@ -16,6 +18,8 @@ pub struct CommandRing {
     read: *mut u8,
     write: *mut u8,
     last_op: Operation,
+
+    tag: u32,
 }
 
 #[derive(Debug)]
@@ -30,6 +34,7 @@ const PX_VERB: &str = "PX";
 
 impl Drop for CommandRing {
     fn drop(&mut self) {
+        trace!("dropping command ring {}", self.tag);
         let vector = unsafe { Vec::from_raw_parts(self.ptr, 0, self.len) };
         drop(vector);
     }
@@ -129,6 +134,7 @@ impl CommandRing {
 
         unsafe {
             Self {
+                tag: thread_rng().next_u32(),
                 ptr,
                 end: ptr.add(len),
                 len,

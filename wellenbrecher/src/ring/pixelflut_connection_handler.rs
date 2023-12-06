@@ -8,14 +8,14 @@ use io_uring::opcode;
 use io_uring::squeue::Entry;
 use io_uring::types::Fd;
 use socket2::Socket;
-use tracing::{debug, error, warn};
+use tracing::{error, info, warn};
 
 use wellenbrecher_canvas::{Canvas, CanvasError};
 
 use crate::ring::command::CommandExecutionError;
 use crate::ring::command_ring::{CommandRing, CommandRingError};
+use crate::ring::ring_coordination::UserState;
 use crate::ring::{ControlFlow, RingOperation, SubmissionQueueSubmitter};
-use crate::UserState;
 
 #[derive(Debug)]
 pub struct PixelflutConnectionHandler {
@@ -45,7 +45,7 @@ impl RingOperation for PixelflutConnectionHandler {
         completion_entry: io_uring::cqueue::Entry,
         mut connection: Self::RingData,
         mut submitter: SubmissionQueueSubmitter<Self::RingData, W>,
-    ) -> ControlFlow {
+    ) -> (ControlFlow, Option<Self::RingData>) {
         match completion_entry.result() {
             n if n > 0 => {
                 unsafe {
@@ -60,30 +60,30 @@ impl RingOperation for PixelflutConnectionHandler {
                             &mut submitter,
                             connection.user_id,
                         ) {
-                            Ok(_) => {}
+                            Ok(()) => {}
                             Err(CommandExecutionError::CanvasError(
                                 CanvasError::PixelOutOfBounds { x, y },
                             )) => {
                                 warn!("[user: {}] tried to set pixel out of bounds: ({x}, {y}); closing connection…",connection.user_id);
-                                return ControlFlow::Warn(eyre::eyre!("[user: {}] tried to set pixel out of bounds: ({x}, {y}); closing connection…",connection.user_id));
+                                drop(connection);
+                                return (ControlFlow::Continue, None);
                             }
                             Err(e) => {
                                 warn!("[user: {}] unable to execute command: {e}; closing connection…",connection.user_id);
-                                return ControlFlow::Warn(eyre::eyre!("[user: {}] unable to execute command: {e}; closing connection…",connection.user_id));
+                                drop(connection);
+                                return (ControlFlow::Continue, None);
                             }
                         },
                         Err(CommandRingError::MoreDataRequired) => {
                             break;
                         }
                         Err(e) => {
-                            error!(
+                            warn!(
                                 "[user: {}] error while parsing command: {e}; closing connection…",
                                 connection.user_id
                             );
-                            return ControlFlow::Warn(eyre::eyre!(
-                                "[user: {}] error while parsing command: {e}; closing connection…",
-                                connection.user_id
-                            ));
+                            drop(connection);
+                            return (ControlFlow::Continue, None);
                         }
                     }
                 }
@@ -94,18 +94,24 @@ impl RingOperation for PixelflutConnectionHandler {
                         .build();
 
                 match submitter.push(read, connection) {
-                    Ok(()) => ControlFlow::Continue,
-                    Err(e) => ControlFlow::Error(e.into()),
+                    Ok(()) => (ControlFlow::Continue, None),
+                    Err(e) => (ControlFlow::Error(e.into()), None),
                 }
             }
-            0 => ControlFlow::Continue,
+            0 => {
+                drop(connection);
+                (ControlFlow::Continue, None)
+            }
             e => {
                 let e = io::Error::from_raw_os_error(e);
                 error!("unable to read from connection {}: {e}", connection.address);
-                ControlFlow::Error(eyre::eyre!(
-                    "unable to read from connection {}: {e}",
-                    connection.address
-                ))
+                (
+                    ControlFlow::Error(eyre::eyre!(
+                        "unable to read from connection {}: {e}",
+                        connection.address
+                    )),
+                    None,
+                )
             }
         }
     }
@@ -132,11 +138,10 @@ pub struct Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        self.user_state.connections.fetch_sub(1, Ordering::Relaxed);
-
-        debug!(
-            "[user: {}] connection from {} dropped",
-            self.user_id, self.address,
+        let connections = self.user_state.connections.fetch_sub(1, Ordering::Relaxed) - 1;
+        info!(
+            "- {} [user: {}, connections: {}]",
+            self.address, self.user_id, connections,
         );
     }
 }

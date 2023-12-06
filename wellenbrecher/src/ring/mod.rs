@@ -7,15 +7,16 @@ use std::num::NonZeroUsize;
 use io_uring::cqueue::Entry;
 use io_uring::squeue::{EntryMarker, PushError};
 use io_uring::SubmissionQueue;
-use tracing::warn;
+use tracing::{trace, warn};
 
 mod command;
 mod command_ring;
 pub mod pixelflut_connection_handler;
-pub mod pixelflut_ring_bridge;
+pub mod ring_coordination;
 pub mod write_buffer_drop;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum ControlFlow {
     Continue,
     Exit,
@@ -35,7 +36,7 @@ pub trait RingOperation: Debug {
         completion_entry: Entry,
         ring_data: Self::RingData,
         submitter: SubmissionQueueSubmitter<Self::RingData, W>,
-    ) -> ControlFlow;
+    ) -> (ControlFlow, Option<Self::RingData>);
     fn on_teardown_completion<W: Fn(&mut io_uring::squeue::Entry, Self::RingData)>(
         &mut self,
         completion_entry: Entry,
@@ -46,18 +47,22 @@ pub trait RingOperation: Debug {
 
 pub struct SubmissionQueueSubmitter<
     'a,
+    'b,
+    'c,
     D,
     W: Fn(&mut E, D),
     E: EntryMarker = io_uring::squeue::Entry,
 > {
-    sq: SubmissionQueue<'a, E>,
-    backlog: &'a mut VecDeque<Box<[E]>>,
+    sq: &'a mut SubmissionQueue<'b, E>,
+    backlog: &'c mut VecDeque<Box<[E]>>,
     backlog_limit: Option<NonZeroUsize>,
     wrapper: W,
     marker: PhantomData<D>,
 }
 
-impl<'a, D, W: Fn(&mut E, D), E: EntryMarker> SubmissionQueueSubmitter<'a, D, W, E> {
+impl<'a, 'b, 'c, D, W: Fn(&mut E, D), E: EntryMarker>
+    SubmissionQueueSubmitter<'a, 'b, 'c, D, W, E>
+{
     #[inline]
     pub fn push(&mut self, entry: E, data: D) -> Result<(), PushError> {
         self.push_multiple([entry], [data])
@@ -86,6 +91,8 @@ impl<'a, D, W: Fn(&mut E, D), E: EntryMarker> SubmissionQueueSubmitter<'a, D, W,
         &mut self,
         entries: [E; N],
     ) -> Result<(), PushError> {
+        trace!("push sqes: {entries:?}");
+
         match self.sq.push_multiple(entries.as_slice()) {
             Ok(()) => Ok(()),
             Err(e) => {
@@ -113,7 +120,9 @@ impl<'a, D, W: Fn(&mut E, D), E: EntryMarker> SubmissionQueueSubmitter<'a, D, W,
 }
 
 #[allow(dead_code)]
-impl<'a, D: Clone, W: Fn(&mut E, D), E: EntryMarker> SubmissionQueueSubmitter<'a, D, W, E> {
+impl<'a, 'b, 'c, D: Clone, W: Fn(&mut E, D), E: EntryMarker>
+    SubmissionQueueSubmitter<'a, 'b, 'c, D, W, E>
+{
     #[inline]
     pub fn push_slice(&mut self, mut entries: Box<[E]>, data: &[D]) -> Result<(), PushError> {
         for (entry, data) in zip(entries.iter_mut(), data.iter()) {
@@ -151,7 +160,8 @@ macro_rules! ring {
             use std::collections::VecDeque;
             use std::fmt::{Debug, Formatter};
             use std::marker::PhantomData;
-            use tracing::{debug, error, warn};
+            use std::os::fd::{AsRawFd, RawFd};
+            use tracing::{debug, error, trace, warn};
             use crate::ring::{ControlFlow, RingOperation, SubmissionQueueSubmitter};
 
             // Enforce trait on $ring_op
@@ -162,6 +172,7 @@ macro_rules! ring {
                 }
             };
 
+            #[derive(Debug)]
             #[allow(non_camel_case_types)]
             pub enum UserData {
                 $($ring_op_name(<$ring_op as RingOperation>::RingData)),+,
@@ -213,20 +224,22 @@ macro_rules! ring {
             }
 
             impl Ring {
-                #[tracing::instrument]
-                pub fn new(ring_size: NonZeroU32, backlog_limit: Option<NonZeroUsize>, $($ring_op_name: $ring_op),+) -> std::io::Result<Self> {
-                    let ring = io_uring::IoUring::builder()
+                pub fn new_raw_ring(ring_size: NonZeroU32) -> std::io::Result<io_uring::IoUring> {
+                    io_uring::IoUring::builder()
                         .setup_single_issuer()
                         .setup_coop_taskrun()
                         .setup_defer_taskrun()
-                        .build(ring_size.get())?;
+                        .build(ring_size.get())
+                }
 
-                    Ok(Self {
+                #[tracing::instrument(skip_all)]
+                pub fn new(ring: io_uring::IoUring, backlog_limit: Option<NonZeroUsize>, $($ring_op_name: $ring_op),+) -> Self {
+                    Self {
                         ring,
                         backlog: Default::default(),
                         backlog_limit,
                         $($ring_op_name),+
-                    })
+                    }
                 }
 
                 #[inline]
@@ -234,12 +247,13 @@ macro_rules! ring {
                     take_mut::take(e, |e| e.user_data(user_data.into()));
                 }
 
-                #[tracing::instrument]
+                #[tracing::instrument(skip_all)]
                 pub fn run(&mut self) -> eyre::Result<()> {
                     let mut result = Ok(());
+                    let (submit, mut sq, mut cq) = self.ring.split();
 
                     $(self.$ring_op_name.setup(SubmissionQueueSubmitter {
-                        sq: self.ring.submission(),
+                        sq: &mut sq,
                         backlog: &mut self.backlog,
                         backlog_limit: self.backlog_limit,
                         wrapper: |e, d| Self::sqe_wrapper(e, UserData::$ring_op_name(d)),
@@ -248,42 +262,51 @@ macro_rules! ring {
 
                     unsafe {
                         'ring_loop: loop {
-                            self.ring.submission().sync();
-                            self.ring.submit_and_wait(1)?;
+                            sq.sync();
+                            submit.submit_and_wait(1)?;
 
                             while let Some(entries) = self.backlog.pop_front() {
-                                if let Err(_) = self.ring.submission().push_multiple(&entries) {
+                                println!("push from backlog");
+                                if let Err(_) = sq.push_multiple(&entries) {
                                     self.backlog.push_front(entries);
                                     break;
                                 }
                             }
 
-                            self.ring.completion().sync();
-                            'completion_loop: for cqe in self.ring.completion_shared().by_ref() {
+                            cq.sync();
+                            'completion_loop: for cqe in cq.by_ref() {
                                 if cqe.user_data() == 0 {
-                                    // our user data cannot be 0
-                                    // but for example msg_ring_fd produces an empty cqe
+                                    trace!("dropped {cqe:?}");
 
                                     // ignore
                                     continue;
                                 }
 
-                                let user_data = UserData::from_raw(cqe.user_data());
+                                let mut user_data = UserData::from_raw(cqe.user_data());
+                                trace!("cqe userdata: {user_data:?}");
                                 let flow = match *user_data {
-                                    $(UserData::$ring_op_name(data) => self.$ring_op_name.on_completion(cqe, data, SubmissionQueueSubmitter {
-                                        sq: self.ring.submission_shared(),
-                                        backlog: &mut self.backlog,
-                                        backlog_limit: self.backlog_limit,
-                                        wrapper: |e, d| Self::sqe_wrapper(e, UserData::$ring_op_name(d)),
-                                        marker: PhantomData::<<$ring_op as RingOperation>::RingData>,
-                                    })),+,
+                                    $(UserData::$ring_op_name(data) => {
+                                        let (flow, new_data) = self.$ring_op_name.on_completion(cqe, data, SubmissionQueueSubmitter {
+                                            sq: &mut sq,
+                                            backlog: &mut self.backlog,
+                                            backlog_limit: self.backlog_limit,
+                                            wrapper: |e, d| Self::sqe_wrapper(e, UserData::$ring_op_name(d)),
+                                            marker: PhantomData::<<$ring_op as RingOperation>::RingData>,
+                                        });
+
+                                        if let Some(new_data) = new_data {
+                                            *user_data = UserData::$ring_op_name(new_data);
+                                            std::mem::forget(std::hint::black_box(user_data));
+                                        }
+
+                                        flow
+                                    }),+,
                                     UserData::Cancel(_) => unreachable!(),
                                 };
 
                                 match flow {
                                     ControlFlow::Exit => break 'ring_loop,
                                     ControlFlow::Error(e) => {
-                                        error!("unable to handle ring completion entry: {e}");
                                         result = Err(e);
                                         break 'ring_loop;
                                     }
@@ -304,16 +327,16 @@ macro_rules! ring {
                         let cancel = io_uring::opcode::AsyncCancel2::new(io_uring::types::CancelBuilder::any())
                             .build()
                             .user_data(UserData::Cancel(u64::MAX).into());
-                        self.ring.submission().push(&cancel)?;
+                        sq.push(&cancel)?;
                     }
 
                     unsafe {
                         'cancel_loop: loop {
-                            self.ring.submission().sync();
-                            self.ring.submit_and_wait(1)?;
+                            sq.sync();
+                            submit.submit_and_wait(1)?;
 
-                            self.ring.completion().sync();
-                            for cqe in self.ring.completion_shared().by_ref() {
+                            cq.sync();
+                            for cqe in cq.by_ref() {
                                 if cqe.user_data() == 0 {
                                     // our user data cannot be 0
                                     // but for example msg_ring_fd produces an empty cqe
@@ -325,7 +348,7 @@ macro_rules! ring {
                                 let user_data = UserData::from_raw(cqe.user_data());
                                 let teardown_result = match *user_data {
                                     $(UserData::$ring_op_name(data) => self.$ring_op_name.on_teardown_completion(cqe, data, SubmissionQueueSubmitter {
-                                        sq: self.ring.submission_shared(),
+                                        sq: &mut sq,
                                         backlog: &mut self.backlog,
                                         backlog_limit: self.backlog_limit,
                                         wrapper: |e, d| Self::sqe_wrapper(e, UserData::$ring_op_name(d)),
@@ -347,12 +370,18 @@ macro_rules! ring {
                     result
                 }
             }
+
+            impl AsRawFd for Ring {
+                fn as_raw_fd(&self) -> RawFd {
+                    self.ring.as_raw_fd()
+                }
+            }
         }
     }
 }
 
 ring! {pixel_flut_ring,
-    bridge: crate::ring::pixelflut_ring_bridge::Receiver,
     pixelflut_connection_handler: crate::ring::pixelflut_connection_handler::PixelflutConnectionHandler,
-    write_buffer_drop: crate::ring::write_buffer_drop::WriteBufferDrop
+    write_buffer_drop: crate::ring::write_buffer_drop::WriteBufferDrop,
+    coordination: crate::ring::ring_coordination::RingCoordination
 }
