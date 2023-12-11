@@ -73,7 +73,7 @@ fn main() -> eyre::Result<()> {
         true,
         args.width.get(),
         args.height.get(),
-        Bgra::from_bw(255),
+        Bgra::from_bw(0),
     )?;
 
     pollster::block_on(run(canvas, event_loop, window, args.gpu_index))

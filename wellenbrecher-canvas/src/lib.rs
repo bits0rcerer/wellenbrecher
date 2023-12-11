@@ -91,6 +91,8 @@ pub struct Canvas {
     user_id_map: *mut UserID,
 }
 
+unsafe impl Send for Canvas {}
+
 impl Debug for Canvas {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {

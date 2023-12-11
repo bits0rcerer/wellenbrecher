@@ -4,7 +4,8 @@ members = [
     "wellenbrecher",
     "wellenbrecher-canvas",
     "seebruecke",
-    "kanal"
+    "kanal",
+    "gst-wellenbrecher-src",
 ]
 
 resolver = "2"

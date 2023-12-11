@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["bits0rcerer <25325997+bits0rcerer@users.noreply.github.com>"]
 license = 'GPL-3'
+repository = "https://github.com/bits0rcerer/wellenbrecher"
 
 resolver = "2"
 

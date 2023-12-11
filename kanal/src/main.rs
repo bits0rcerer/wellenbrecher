@@ -42,14 +42,15 @@ fn main() -> eyre::Result<()> {
 
     let args = cli::Args::parse();
 
-    let canvas = Canvas::open(
+    let _canvas = Canvas::open(
         args.canvas_file_link.as_ref(),
         true,
         args.width.get(),
         args.height.get(),
-        Bgra::from_bw(255),
+        Bgra::from_bw(0),
     )?;
 
-    // DO SOMETHING
-    todo!()
+    match &args.command {
+        _ => todo!(),
+    }
 }

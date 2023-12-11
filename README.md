@@ -81,6 +81,17 @@ Options:
   -V, --version                Print version
   ```
 
+### `gst-wellenbrecher-src`
+
+[GStreamer](https://gstreamer.freedesktop.org/) source to stream the canvas.
+
+```bash
+cargo build --package gst-wellenbrecher-src --release
+GST_PLUGIN_PATH=$(pwd)/target/release
+
+gst-launch-1.0 wbsrc ! videoconvert ! autovideosink
+  ```
+
 ## Requirements
 
 - `wellenbrecher`
@@ -90,7 +101,10 @@ Options:
 - `seebruecke`
     - see [wgpu supported platforms](https://github.com/gfx-rs/wgpu#supported-platforms)
 
-`wellenbrecher` and `seebruecke` share the canvas via shared memory
+- `gst-wellenbrecher-src`
+  - [GStreamer](https://gstreamer.freedesktop.org/)
+
+The canvas is shared via shared memory
 
 # Special thanks to
 

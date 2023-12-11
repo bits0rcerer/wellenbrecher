@@ -1,0 +1,23 @@
+[package]
+name = "gst-wellenbrecher-src"
+version = "0.1.0"
+edition = "2021"
+authors = ["bits0rcerer <25325997+bits0rcerer@users.noreply.github.com>"]
+license = 'GPL-3'
+description = "gstreamer source for wellenbrecher's shared memory canvans"
+repository = "https://github.com/bits0rcerer/wellenbrecher"
+
+[dependencies]
+wellenbrecher-canvas = { path = "../wellenbrecher-canvas" }
+
+gst = { package = "gstreamer", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs" }
+gst-base = { package = "gstreamer-base", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs" }
+gst-video = { package = "gstreamer-video", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs" }
+
+[lib]
+name = "wbsrc"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[build-dependencies]
+gst-plugin-version-helper = { git = "https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs" }

@@ -1,8 +1,8 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU16, NonZeroU32};
 
 use clap::{Parser, Subcommand};
 
-#[derive(Parser, Clone)]
+#[derive(Parser, Clone, Debug)]
 #[command(author, version, about)]
 pub struct Args {
     /// Canvas width
@@ -16,7 +16,14 @@ pub struct Args {
     /// Canvas shared memory file link
     #[arg(short = 'l', long = "canvas-file-link", default_value_t = String::from("/tmp/wellenbrecher-canvas"))]
     pub canvas_file_link: String,
+
+    /// Canvas shared memory file link
+    #[arg(short, long, default_value_t = NonZeroU16::new(30).unwrap())]
+    pub fps: NonZeroU16,
+
+    #[command(subcommand)]
+    pub command: Commands,
 }
 
-#[derive(Subcommand)]
-enum Commands {}
+#[derive(Subcommand, Clone, Debug)]
+pub enum Commands {}
