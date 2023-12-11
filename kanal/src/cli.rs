@@ -1,6 +1,6 @@
 use std::num::NonZeroU32;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser, Clone)]
 #[command(author, version, about)]
@@ -13,15 +13,10 @@ pub struct Args {
     #[arg(long, default_value_t = NonZeroU32::new(720).unwrap())]
     pub height: NonZeroU32,
 
-    /// GPU Index
-    #[arg(long, default_value_t = 0usize)]
-    pub gpu_index: usize,
-
-    /// List available GPUs
-    #[arg(long = "list-gpus", default_value_t = false)]
-    pub list_gpus: bool,
-
     /// Canvas shared memory file link
     #[arg(short = 'l', long = "canvas-file-link", default_value_t = String::from("/tmp/wellenbrecher-canvas"))]
     pub canvas_file_link: String,
 }
+
+#[derive(Subcommand)]
+enum Commands {}

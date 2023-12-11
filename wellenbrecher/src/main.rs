@@ -46,7 +46,7 @@ Example:
     "PX 420 69 ffff007f\n" -> blend the color of pixel at (420, 69) with yellow (alpha 127)
 "#;
 
-const BANNER: &str = r#"
+const BANNER: &str = r"
  __      __          ___    ___                  __                          __                      
 /\ \  __/\ \        /\_ \  /\_ \                /\ \                        /\ \                     
 \ \ \/\ \ \ \     __\//\ \ \//\ \      __    ___\ \ \____  _ __    __    ___\ \ \___      __   _ __  
@@ -60,7 +60,7 @@ const BANNER: &str = r#"
 
        github.com/bits0rcerer/wellenbrecher
 
-"#;
+";
 
 macro_rules! print_and_return_error {
     ($($arg:tt)+) => {
