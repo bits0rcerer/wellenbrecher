@@ -6,6 +6,7 @@ members = [
     "seebruecke",
     "kanal",
     "gst-wellenbrecher-src",
+    "pfparse"
 ]
 
 resolver = "2"

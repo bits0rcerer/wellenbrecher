@@ -7,7 +7,7 @@ use shared_memory::{Shmem, ShmemError};
 use thiserror::Error;
 use tracing::error;
 
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable, Eq, PartialEq)]
 #[repr(C)]
 pub struct Bgra {
     pub b: u8,
@@ -50,6 +50,16 @@ impl Bgra {
             g: ((value & 0x00ff0000) >> 16) as u8,
             b: ((value & 0x0000ff00) >> 8) as u8,
             a: (value & 0x000000ff) as u8,
+        }
+    }
+
+    #[inline]
+    pub fn from_argb(value: u32) -> Self {
+        Self {
+            a: ((value & 0xff000000) >> 24) as u8,
+            r: ((value & 0x00ff0000) >> 16) as u8,
+            g: ((value & 0x0000ff00) >> 8) as u8,
+            b: (value & 0x000000ff) as u8,
         }
     }
 
