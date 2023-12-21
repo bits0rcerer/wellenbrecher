@@ -12,13 +12,13 @@ use io_uring::opcode;
 use io_uring::squeue::{Entry, PushError};
 use io_uring::types::Fd;
 use libc::c_int;
+use rummelplatz::{ControlFlow, RingOperation, SubmissionQueueSubmitter, IORING_CQE_F_MORE};
 use socket2::Socket;
 use tracing::{error, info};
 
 use crate::ring::command_ring::CommandRing;
 use crate::ring::pixel_flut_ring::UserData;
 use crate::ring::pixelflut_connection_handler::Connection;
-use crate::ring::{ControlFlow, RingOperation, SubmissionQueueSubmitter};
 
 #[derive(Debug)]
 pub enum RingMessage {
@@ -84,6 +84,10 @@ impl RingCoordination {
 
 impl RingOperation for RingCoordination {
     type RingData = RingMessage;
+    type SetupError = eyre::Error;
+    type TeardownError = eyre::Error;
+    type ControlFlowWarn = eyre::Error;
+    type ControlFlowError = eyre::Error;
 
     fn setup<W: Fn(&mut Entry, Self::RingData)>(
         &mut self,
@@ -109,7 +113,10 @@ impl RingOperation for RingCoordination {
         completion_entry: io_uring::cqueue::Entry,
         ring_data: Self::RingData,
         mut submitter: SubmissionQueueSubmitter<Self::RingData, W>,
-    ) -> (ControlFlow, Option<Self::RingData>) {
+    ) -> (
+        ControlFlow<Self::ControlFlowWarn, Self::ControlFlowError>,
+        Option<Self::RingData>,
+    ) {
         match (ring_data, self) {
             (
                 RingMessage::NewConnection,
@@ -157,7 +164,7 @@ impl RingOperation for RingCoordination {
                     Fd(*fd),
                     0,
                     UserData::coordination(RingMessage::NewClient(new_client)).into(),
-                    None,
+                    Some(IORING_CQE_F_MORE),
                 )
                 .build()
                 .user_data(0);
@@ -195,7 +202,7 @@ impl RingOperation for RingCoordination {
                                 Fd(fd.as_raw_fd()),
                                 0,
                                 UserData::coordination(RingMessage::Exit).into(),
-                                None,
+                                Some(IORING_CQE_F_MORE),
                             )
                             .build()
                             .user_data(0);

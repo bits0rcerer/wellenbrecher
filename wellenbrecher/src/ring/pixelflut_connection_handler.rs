@@ -7,6 +7,7 @@ use std::sync::Arc;
 use io_uring::opcode;
 use io_uring::squeue::Entry;
 use io_uring::types::Fd;
+use rummelplatz::{ControlFlow, RingOperation, SubmissionQueueSubmitter};
 use socket2::Socket;
 use tracing::{error, info, warn};
 
@@ -15,7 +16,6 @@ use wellenbrecher_canvas::{Canvas, CanvasError};
 use crate::ring::command::CommandExecutionError;
 use crate::ring::command_ring::{CommandRing, CommandRingError};
 use crate::ring::ring_coordination::UserState;
-use crate::ring::{ControlFlow, RingOperation, SubmissionQueueSubmitter};
 
 #[derive(Debug)]
 pub struct PixelflutConnectionHandler {
@@ -30,6 +30,10 @@ impl PixelflutConnectionHandler {
 
 impl RingOperation for PixelflutConnectionHandler {
     type RingData = Connection;
+    type SetupError = eyre::Error;
+    type TeardownError = eyre::Error;
+    type ControlFlowWarn = eyre::Error;
+    type ControlFlowError = eyre::Error;
 
     #[inline]
     fn setup<W: Fn(&mut Entry, Self::RingData)>(
@@ -45,7 +49,10 @@ impl RingOperation for PixelflutConnectionHandler {
         completion_entry: io_uring::cqueue::Entry,
         mut connection: Self::RingData,
         mut submitter: SubmissionQueueSubmitter<Self::RingData, W>,
-    ) -> (ControlFlow, Option<Self::RingData>) {
+    ) -> (
+        ControlFlow<Self::ControlFlowWarn, Self::ControlFlowError>,
+        Option<Self::RingData>,
+    ) {
         match completion_entry.result() {
             n if n > 0 => {
                 unsafe {

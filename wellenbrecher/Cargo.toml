@@ -10,6 +10,7 @@ resolver = "2"
 
 [dependencies]
 wellenbrecher-canvas = { path = "../wellenbrecher-canvas" }
+rummelplatz = { git = "https://github.com/bits0rcerer/rummelplatz" }
 
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -21,7 +22,8 @@ shared_memory.workspace = true
 nftables = "0.2.4"
 
 socket2 = "0.5.5"
-io-uring = "0.6.2"
+#io-uring = "0.6.2"
+io-uring = { git = "https://github.com/bits0rcerer/io-uring", branch = "msg_ring_pass_flags" }
 core_affinity = "0.8.1"
 
 bytemuck = "1.14.0"

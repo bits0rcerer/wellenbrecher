@@ -4,11 +4,11 @@ use std::str::FromStr;
 use io_uring::opcode;
 use io_uring::squeue::PushError;
 use io_uring::types::Fd;
+use rummelplatz::SubmissionQueueSubmitter;
 use thiserror::Error;
 
 use wellenbrecher_canvas::{Bgra, Canvas, CanvasError};
 
-use crate::ring::SubmissionQueueSubmitter;
 use crate::HELP_TEXT;
 
 #[derive(Debug)]

@@ -338,5 +338,6 @@ fn worker(
         coordination,
     );
 
-    ring.run()
+    ring.run::<eyre::Error, eyre::Error, eyre::Error>()?;
+    Ok(())
 }
