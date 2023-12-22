@@ -8,10 +8,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use io_uring::opcode;
-use io_uring::squeue::{Entry, PushError};
-use io_uring::types::Fd;
 use libc::c_int;
+use rummelplatz::io_uring::opcode;
+use rummelplatz::io_uring::squeue::{Entry, PushError};
+use rummelplatz::io_uring::types::Fd;
 use rummelplatz::{ControlFlow, RingOperation, SubmissionQueueSubmitter, IORING_CQE_F_MORE};
 use socket2::Socket;
 use tracing::{error, info};
@@ -110,7 +110,7 @@ impl RingOperation for RingCoordination {
 
     fn on_completion<W: Fn(&mut Entry, Self::RingData)>(
         &mut self,
-        completion_entry: io_uring::cqueue::Entry,
+        completion_entry: rummelplatz::io_uring::cqueue::Entry,
         ring_data: Self::RingData,
         mut submitter: SubmissionQueueSubmitter<Self::RingData, W>,
     ) -> (
@@ -256,7 +256,7 @@ impl RingOperation for RingCoordination {
 
     fn on_teardown_completion<W: Fn(&mut Entry, Self::RingData)>(
         &mut self,
-        _: io_uring::cqueue::Entry,
+        _: rummelplatz::io_uring::cqueue::Entry,
         ring_data: Self::RingData,
         _: SubmissionQueueSubmitter<Self::RingData, W>,
     ) -> eyre::Result<()> {

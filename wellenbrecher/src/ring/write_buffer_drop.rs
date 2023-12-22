@@ -1,4 +1,4 @@
-use io_uring::squeue::Entry;
+use rummelplatz::io_uring::squeue::Entry;
 use rummelplatz::{ControlFlow, RingOperation, SubmissionQueueSubmitter};
 
 #[derive(Debug)]
@@ -21,7 +21,7 @@ impl RingOperation for WriteBufferDrop {
     #[inline]
     fn on_completion<W: Fn(&mut Entry, Self::RingData)>(
         &mut self,
-        _: io_uring::cqueue::Entry,
+        _: rummelplatz::io_uring::cqueue::Entry,
         buf: Self::RingData,
         _: SubmissionQueueSubmitter<Self::RingData, W>,
     ) -> (
@@ -34,7 +34,7 @@ impl RingOperation for WriteBufferDrop {
 
     fn on_teardown_completion<W: Fn(&mut Entry, Self::RingData)>(
         &mut self,
-        _: io_uring::cqueue::Entry,
+        _: rummelplatz::io_uring::cqueue::Entry,
         buf: Self::RingData,
         _: SubmissionQueueSubmitter<Self::RingData, W>,
     ) -> eyre::Result<()> {

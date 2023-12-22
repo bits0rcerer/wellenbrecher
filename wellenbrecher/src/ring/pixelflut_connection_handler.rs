@@ -4,9 +4,9 @@ use std::os::fd::{AsRawFd, RawFd};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use io_uring::opcode;
-use io_uring::squeue::Entry;
-use io_uring::types::Fd;
+use rummelplatz::io_uring::opcode;
+use rummelplatz::io_uring::squeue::Entry;
+use rummelplatz::io_uring::types::Fd;
 use rummelplatz::{ControlFlow, RingOperation, SubmissionQueueSubmitter};
 use socket2::Socket;
 use tracing::{error, info, warn};
@@ -46,7 +46,7 @@ impl RingOperation for PixelflutConnectionHandler {
     #[inline]
     fn on_completion<W: Fn(&mut Entry, Self::RingData)>(
         &mut self,
-        completion_entry: io_uring::cqueue::Entry,
+        completion_entry: rummelplatz::io_uring::cqueue::Entry,
         mut connection: Self::RingData,
         mut submitter: SubmissionQueueSubmitter<Self::RingData, W>,
     ) -> (
@@ -125,7 +125,7 @@ impl RingOperation for PixelflutConnectionHandler {
 
     fn on_teardown_completion<W: Fn(&mut Entry, Self::RingData)>(
         &mut self,
-        _completion_entry: io_uring::cqueue::Entry,
+        _completion_entry: rummelplatz::io_uring::cqueue::Entry,
         connection: Self::RingData,
         _submitter: SubmissionQueueSubmitter<Self::RingData, W>,
     ) -> eyre::Result<()> {

@@ -309,7 +309,7 @@ fn secondary_worker(
 fn worker(
     core: CoreId,
     index: usize,
-    ring: io_uring::IoUring,
+    ring: rummelplatz::io_uring::IoUring,
     coordination: RingCoordination,
     args: Args,
 ) -> eyre::Result<()> {

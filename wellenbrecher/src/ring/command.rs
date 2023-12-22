@@ -1,9 +1,9 @@
 #[cfg(not(feature = "simd_decoding"))]
 use std::str::FromStr;
 
-use io_uring::opcode;
-use io_uring::squeue::PushError;
-use io_uring::types::Fd;
+use rummelplatz::io_uring::opcode;
+use rummelplatz::io_uring::squeue::PushError;
+use rummelplatz::io_uring::types::Fd;
 use rummelplatz::SubmissionQueueSubmitter;
 use thiserror::Error;
 
@@ -73,7 +73,7 @@ impl TryFrom<&str> for Command {
 
 impl Command {
     #[inline]
-    pub fn handle_command<D, W: Fn(&mut io_uring::squeue::Entry, D)>(
+    pub fn handle_command<D, W: Fn(&mut rummelplatz::io_uring::squeue::Entry, D)>(
         self,
         canvas: &mut Canvas,
         socket_fd: Fd,
