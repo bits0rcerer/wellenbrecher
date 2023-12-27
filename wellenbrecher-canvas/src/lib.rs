@@ -193,10 +193,10 @@ impl Canvas {
 
     #[inline]
     pub fn pixel(&self, x: u32, y: u32) -> Result<Bgra, CanvasError> {
-        let idx = self.coords_to_index(x, y);
-        if idx >= self.len {
+        if y > self.height || x > self.width {
             return Err(CanvasError::PixelOutOfBounds { x, y });
         }
+        let idx = self.coords_to_index(x, y);
         unsafe { Ok(std::ptr::read(self.data.add(idx))) }
     }
 
