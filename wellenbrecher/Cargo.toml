@@ -10,7 +10,7 @@ resolver = "2"
 
 [dependencies]
 wellenbrecher-canvas = { path = "../wellenbrecher-canvas" }
-rummelplatz = { git = "https://github.com/bits0rcerer/rummelplatz" }
+rummelplatz = { git = "https://github.com/bits0rcerer/rummelplatz", rev = "c91a14a2a9491cf37c8734a31452d0e11cb233fa" }
 
 tracing.workspace = true
 tracing-subscriber.workspace = true

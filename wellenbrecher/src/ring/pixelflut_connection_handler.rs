@@ -110,10 +110,13 @@ impl RingOperation for PixelflutConnectionHandler {
                 (ControlFlow::Continue, None)
             }
             e => {
-                let e = io::Error::from_raw_os_error(e);
-                error!("unable to read from connection {}: {e}", connection.address);
+                let e = io::Error::from_raw_os_error(-e);
+                error!(
+                    "unable to read from connection {}: {e}; closing connection…",
+                    connection.address
+                );
                 (
-                    ControlFlow::Error(eyre::eyre!(
+                    ControlFlow::Warn(eyre::eyre!(
                         "unable to read from connection {}: {e}",
                         connection.address
                     )),

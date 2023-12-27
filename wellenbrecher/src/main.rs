@@ -268,7 +268,7 @@ fn primary_worker(
             e if e < 0 => {
                 return Err(eyre::eyre!(
                     "unable to setup signal handler: {}",
-                    std::io::Error::from_raw_os_error(e)
+                    std::io::Error::from_raw_os_error(-e)
                 ));
             }
             fd => fd.as_raw_fd(),

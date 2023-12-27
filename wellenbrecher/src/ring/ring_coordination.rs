@@ -131,7 +131,7 @@ impl RingOperation for RingCoordination {
                 },
             ) => {
                 if completion_entry.result() < 0 {
-                    let e = io::Error::from_raw_os_error(completion_entry.result());
+                    let e = io::Error::from_raw_os_error(-completion_entry.result());
                     error!("failed to accept new client: {e}");
                     return (ControlFlow::Error(e.into()), None);
                 }
