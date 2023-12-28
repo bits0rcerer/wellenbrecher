@@ -1,9 +1,9 @@
 use clap::Parser;
-use tracing::Level;
+use tracing::{debug, Level};
 use tracing_subscriber::EnvFilter;
 use wgpu::Backends;
 use winit::event_loop::EventLoop;
-use winit::window::WindowBuilder;
+use winit::window::{Fullscreen, WindowBuilder};
 
 use seebruecke::run;
 use wellenbrecher_canvas::{Bgra, Canvas};
@@ -45,14 +45,26 @@ fn main() -> eyre::Result<()> {
     setup_logging()?;
 
     let event_loop = EventLoop::new();
+
+    let monitor = event_loop
+        .available_monitors()
+        .next()
+        .expect("no monitor found!");
+    debug!("Monitor: {:?}", monitor.name());
+
+    let mode = monitor.video_modes().next().expect("no mode found");
+    debug!("Video mode: {mode}");
+
+    let args = cli::Args::parse();
+
     let window = WindowBuilder::new()
         .with_decorations(true)
         .with_resizable(true)
         .with_title("Wellenbrecher")
+        .with_fullscreen(args.fullscreen.then_some(Fullscreen::Exclusive(mode)))
         .build(&event_loop)
         .unwrap();
 
-    let args = cli::Args::parse();
     if args.list_gpus {
         let instance = wgpu::Instance::default();
 

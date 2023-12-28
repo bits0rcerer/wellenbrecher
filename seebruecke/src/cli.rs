@@ -21,6 +21,10 @@ pub struct Args {
     #[arg(long = "list-gpus", default_value_t = false)]
     pub list_gpus: bool,
 
+    /// Start in fullscreen mode
+    #[arg(short = 'f', long, default_value_t = false)]
+    pub fullscreen: bool,
+
     /// Canvas shared memory file link
     #[arg(short = 'l', long = "canvas-file-link", default_value_t = String::from("/tmp/wellenbrecher-canvas"))]
     pub canvas_file_link: String,
