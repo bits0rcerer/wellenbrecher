@@ -1,5 +1,9 @@
 #![feature(vec_into_raw_parts)]
 #![feature(new_uninit)]
+#![feature(const_for)]
+#![feature(const_trait_impl)]
+#![feature(const_mut_refs)]
+#![feature(effects)]
 
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::num::NonZeroU32;

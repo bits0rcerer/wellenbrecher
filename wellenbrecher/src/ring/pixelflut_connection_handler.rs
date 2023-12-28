@@ -9,7 +9,7 @@ use rummelplatz::io_uring::squeue::Entry;
 use rummelplatz::io_uring::types::Fd;
 use rummelplatz::{ControlFlow, RingOperation, SubmissionQueueSubmitter};
 use socket2::Socket;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use wellenbrecher_canvas::{Canvas, CanvasError};
 
@@ -112,7 +112,7 @@ impl RingOperation for PixelflutConnectionHandler {
             }
             e => {
                 let e = io::Error::from_raw_os_error(-e);
-                error!(
+                warn!(
                     "unable to read from connection {}: {e}; closing connection…",
                     connection.address
                 );

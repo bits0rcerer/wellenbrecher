@@ -201,6 +201,15 @@ impl Canvas {
     }
 
     #[inline]
+    pub fn user(&self, x: u32, y: u32) -> Result<UserID, CanvasError> {
+        if y > self.height || x > self.width {
+            return Err(CanvasError::PixelOutOfBounds { x, y });
+        }
+        let idx = self.coords_to_index(x, y);
+        unsafe { Ok(std::ptr::read(self.user_id_map.add(idx))) }
+    }
+
+    #[inline]
     pub fn set_pixel(&self, x: u32, y: u32, color: Bgra, user_id: u32) -> Result<(), CanvasError> {
         let idx = self.coords_to_index(x, y);
         if idx >= self.len {

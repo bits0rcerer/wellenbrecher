@@ -33,6 +33,47 @@ const SIZE_VERB: &str = "SIZE\n";
 const PX_VERB: &str = "PX";
 const OFFSET_VERB: &str = "OFFSET";
 
+const HEX_LOOKUP: [u16; 256] = hex_lookup();
+const INVALID_HEX_DIGIT: u16 = 0xffff;
+
+const fn hex_lookup() -> [u16; 256] {
+    let mut lookup = [INVALID_HEX_DIGIT; 256];
+
+    let mut i = 0;
+    loop {
+        match i {
+            b'0' => lookup[i as usize] = 0x0,
+            b'1' => lookup[i as usize] = 0x1,
+            b'2' => lookup[i as usize] = 0x2,
+            b'3' => lookup[i as usize] = 0x3,
+            b'4' => lookup[i as usize] = 0x4,
+            b'5' => lookup[i as usize] = 0x5,
+            b'6' => lookup[i as usize] = 0x6,
+            b'7' => lookup[i as usize] = 0x7,
+            b'8' => lookup[i as usize] = 0x8,
+            b'9' => lookup[i as usize] = 0x9,
+            b'a' => lookup[i as usize] = 0xa,
+            b'b' => lookup[i as usize] = 0xb,
+            b'c' => lookup[i as usize] = 0xc,
+            b'd' => lookup[i as usize] = 0xd,
+            b'e' => lookup[i as usize] = 0xe,
+            b'f' => lookup[i as usize] = 0xf,
+            b'A' => lookup[i as usize] = 0xa,
+            b'B' => lookup[i as usize] = 0xb,
+            b'C' => lookup[i as usize] = 0xc,
+            b'D' => lookup[i as usize] = 0xd,
+            b'E' => lookup[i as usize] = 0xe,
+            b'F' => lookup[i as usize] = 0xf,
+            _ => lookup[i as usize] = INVALID_HEX_DIGIT,
+        }
+
+        if i == u8::MAX {
+            return lookup;
+        }
+        i += 1;
+    }
+}
+
 impl Drop for CommandRing {
     fn drop(&mut self) {
         trace!("dropping command ring {}", self.tag);
@@ -53,21 +94,9 @@ macro_rules! impl_consume_decimal_u32_until {
 
                     let mut value = 0u32;
 
-                    // unrolled for first iteration
                     unsafe {
-                        {
-                            if self.available_to_read() == 0 {
-                                return Err(CommandRingError::MoreDataRequired);
-                            }
-                            let digit = self.read.read();
-                            self.increment_read_unchecked();
-
-                            let digit = digit.wrapping_sub(b'0');
-                            if digit >= 10 {
-                                return Err(CommandRingError::InvalidDecimalDigit(digit.wrapping_add(b'0') as char));
-                            }
-
-                            value = (value * 10) + digit as u32;
+                        if self.available_to_read() == 0 {
+                            return Err(CommandRingError::MoreDataRequired);
                         }
 
                         loop {
@@ -83,12 +112,10 @@ macro_rules! impl_consume_decimal_u32_until {
                             }
                             )+
 
-                            let digit = digit.wrapping_sub(b'0');
-                            if digit >= 10 {
-                                return Err(CommandRingError::InvalidDecimalDigit(digit.wrapping_add(b'0') as char));
+                            match HEX_LOOKUP[digit as usize] {
+                                INVALID_HEX_DIGIT => return Err(CommandRingError::InvalidDecimalDigit(digit as char)),
+                                digit => value = (value * 10) + digit as u32,
                             }
-
-                            value = (value * 10) + digit as u32;
                         }
                     }
                 }
@@ -286,46 +313,8 @@ impl CommandRing {
         }
 
         let mut value = 0u32;
-
-        // unrolled for first and second iteration
         unsafe {
-            {
-                let chr = self.read.read();
-                self.increment_read_unchecked();
-
-                let digit = if chr >= b'a' {
-                    chr.wrapping_sub(b'a' - 10)
-                } else {
-                    chr.wrapping_sub(b'0')
-                };
-
-                if digit >= 16 {
-                    return Err(CommandRingError::InvalidHexadecimalDigit(chr as char));
-                }
-
-                value = (value << 4) + digit as u32;
-            }
-            {
-                if self.read == self.write {
-                    return Err(CommandRingError::MoreDataRequired);
-                }
-                let chr = self.read.read();
-                self.increment_read_unchecked();
-
-                let digit = if chr >= b'a' {
-                    chr.wrapping_sub(b'a' - 10)
-                } else {
-                    chr.wrapping_sub(b'0')
-                };
-
-                if digit >= 16 {
-                    return Err(CommandRingError::InvalidHexadecimalDigit(chr as char));
-                }
-
-                value = (value << 4) + digit as u32;
-            }
-
-            for len in 2.. {
+            for len in 0..9 {
                 if self.read == self.write {
                     return Err(CommandRingError::MoreDataRequired);
                 }
@@ -341,21 +330,15 @@ impl CommandRing {
                     };
                 }
 
-                let digit = if chr >= b'a' {
-                    chr.wrapping_sub(b'a' - 10)
-                } else {
-                    chr.wrapping_sub(b'0')
-                };
-
-                if digit >= 16 {
-                    return Err(CommandRingError::InvalidHexadecimalDigit(chr as char));
+                match HEX_LOOKUP[chr as usize] {
+                    INVALID_HEX_DIGIT => {
+                        return Err(CommandRingError::InvalidHexadecimalDigit(chr as char))
+                    }
+                    digit => value = (value << 4) + digit as u32,
                 }
-
-                value = (value << 4) + digit as u32;
             }
-
-            unreachable!()
         }
+        return Err(CommandRingError::InvalidColor);
     }
 
     #[inline]
