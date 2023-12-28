@@ -4,9 +4,7 @@ A capable [pixelflut](https://github.com/defnull/pixelflut) server written in Ru
 
 ## But is it fast?
 
-**Yes**, actually the fastest (yet?).
-
-_Feel free to open an issue, in case you found a faster server._
+**Yes**, but [#1](https://github.com/bits0rcerer/wellenbrecher/issues/1)
 
 #### Comparison
 
