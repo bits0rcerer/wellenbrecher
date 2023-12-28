@@ -1,6 +1,3 @@
-#[cfg(not(feature = "simd_decoding"))]
-use std::str::FromStr;
-
 use rummelplatz::io_uring::opcode;
 use rummelplatz::io_uring::squeue::PushError;
 use rummelplatz::io_uring::types::Fd;
@@ -17,58 +14,7 @@ pub enum Command {
     Size,
     SetPixel { x: u32, y: u32, color: Bgra },
     GetPixel { x: u32, y: u32 },
-}
-
-impl TryFrom<&str> for Command {
-    type Error = eyre::Report;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value.as_bytes() {
-            [b'H', b'E', b'L', b'P'] => Ok(Command::Help),
-            [b'S', b'I', b'Z', b'E'] => Ok(Command::Size),
-            [b'P', b'X', b' ', args @ ..] => {
-                let mut args = unsafe { std::str::from_utf8_unchecked(args) }.split(' ');
-
-                // argument x
-                let x = match args.next() {
-                    None => return Err(eyre::eyre!("invalid arguments for PX command")),
-                    Some(x) => u32::from_str(x)?,
-                };
-
-                // argument y
-                let y = match args.next() {
-                    None => return Err(eyre::eyre!("invalid arguments for PX command")),
-                    Some(y) => u32::from_str(y)?,
-                };
-
-                // command end or argument color
-                let (color, c) = match args.next() {
-                    None => return Ok(Command::GetPixel { x, y }),
-                    Some(c) => (u32::from_str_radix(c, 16)?, c),
-                };
-
-                match (color, c.len()) {
-                    (color, 2) => Ok(Command::SetPixel {
-                        x,
-                        y,
-                        color: Bgra::from_bw(color as u8),
-                    }),
-                    (color, 6) => Ok(Command::SetPixel {
-                        x,
-                        y,
-                        color: Bgra::from_rgb(color),
-                    }),
-                    (color, 8) => Ok(Command::SetPixel {
-                        x,
-                        y,
-                        color: color.into(),
-                    }),
-                    (_, _) => Err(eyre::eyre!("color {} is invalid", c)),
-                }
-            }
-            _ => Err(eyre::eyre!("unknown command \"{value}\"")),
-        }
-    }
+    Offset { x: u32, y: u32 },
 }
 
 impl Command {
@@ -79,6 +25,7 @@ impl Command {
         socket_fd: Fd,
         submitter: &mut SubmissionQueueSubmitter<D, W>,
         user_id: u32,
+        user_offset: &mut (u32, u32),
     ) -> Result<(), CommandExecutionError> {
         match self {
             Command::Help => {
@@ -110,9 +57,13 @@ impl Command {
                 Ok(())
             }
             Command::SetPixel { x, y, color } => {
+                let x = user_offset.0 + x;
+                let y = user_offset.1 + y;
                 canvas.set_pixel(x, y, color, user_id).map_err(|e| e.into())
             }
             Command::GetPixel { x, y } => {
+                let x = user_offset.0 + x;
+                let y = user_offset.1 + y;
                 let color = u32::from(canvas.pixel(x, y).unwrap_or_default());
                 let msg = format!("PX {x} {y} {color:0>8x}\n")
                     .into_boxed_str()
@@ -126,6 +77,16 @@ impl Command {
                 unsafe {
                     submitter.push_raw(write)?;
                 }
+                Ok(())
+            }
+            Command::Offset { x, y } => {
+                if x >= canvas.width() || y >= canvas.height() {
+                    return Err(CommandExecutionError::CanvasError(
+                        CanvasError::PixelOutOfBounds { x, y },
+                    ));
+                }
+
+                *user_offset = (x, y);
                 Ok(())
             }
         }

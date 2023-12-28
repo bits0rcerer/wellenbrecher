@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use gst::glib;
-use gst::glib::bitflags::Flags;
 use gst::glib::once_cell::sync::Lazy;
 use gst::prelude::{ElementExt, ParamSpecBuilderExt, ToValue};
 use gst::subclass::prelude::{

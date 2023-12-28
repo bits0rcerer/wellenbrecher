@@ -31,6 +31,7 @@ enum Operation {
 const HELP_VERB: &str = "HELP\n";
 const SIZE_VERB: &str = "SIZE\n";
 const PX_VERB: &str = "PX";
+const OFFSET_VERB: &str = "OFFSET";
 
 impl Drop for CommandRing {
     fn drop(&mut self) {
@@ -97,6 +98,7 @@ macro_rules! impl_consume_decimal_u32_until {
 }
 
 impl_consume_decimal_u32_until!(whitespace, b' ');
+impl_consume_decimal_u32_until!(new_line, b'\n');
 impl_consume_decimal_u32_until!(whitespace_or_new_line, b' ', b'\n');
 
 macro_rules! impl_advance {
@@ -358,6 +360,7 @@ impl CommandRing {
 
     #[inline]
     fn read_next_command_inner(&mut self) -> RingResult<Command> {
+        // These ifs have to be ordered by increasing VERB length!
         if self.consume_compare(PX_VERB)? {
             self.consume_whitespace()?;
             let (x, _) = self.consume_decimal_u32_until_whitespace()?;
@@ -374,6 +377,13 @@ impl CommandRing {
             Ok(Command::Size)
         } else if self.consume_compare(HELP_VERB)? {
             Ok(Command::Help)
+        } else if self.consume_compare(OFFSET_VERB)? {
+            self.consume_whitespace()?;
+            let (x, _) = self.consume_decimal_u32_until_whitespace()?;
+            self.consume_whitespace()?;
+            let (y, _) = self.consume_decimal_u32_until_new_line()?;
+
+            Ok(Command::Offset { x, y })
         } else {
             Err(CommandRingError::UnknownVerb)
         }

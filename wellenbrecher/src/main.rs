@@ -34,6 +34,7 @@ Commands:
     SIZE                -> get the size of the canvas
     PX <x> <y>          -> get the color of pixel (x, y)
     PX <x> <y> <COLOR>  -> set the color of pixel (x, y)
+    OFFSET <x> <y>      -> sets an pixel offset for all following commands
 
     COLOR:
         Grayscale: ww          ("00"       black .. "ff"       white)

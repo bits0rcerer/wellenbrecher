@@ -66,6 +66,7 @@ impl RingOperation for PixelflutConnectionHandler {
                             Fd(connection.socket.as_raw_fd()),
                             &mut submitter,
                             connection.user_id,
+                            &mut connection.user_offset,
                         ) {
                             Ok(()) => {}
                             Err(CommandExecutionError::CanvasError(
@@ -140,6 +141,7 @@ impl RingOperation for PixelflutConnectionHandler {
 #[derive(Debug)]
 pub struct Connection {
     pub user_id: u32,
+    pub user_offset: (u32, u32),
     pub user_state: Arc<UserState>,
     pub socket: Socket,
     pub address: SocketAddr,

@@ -230,6 +230,7 @@ impl RingOperation for RingCoordination {
 
                 let connection = Connection {
                     user_id: new_client.uid,
+                    user_offset: (0, 0),
                     user_state: new_client.state,
                     socket: new_client.socket,
                     address: new_client.address,
