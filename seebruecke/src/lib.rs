@@ -1,11 +1,11 @@
 use std::iter;
 
 use bytemuck_derive::{Pod, Zeroable};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use wgpu::util::DeviceExt;
 use wgpu::{
     Backends, BindGroup, CompositeAlphaMode, ImageDataLayout, PresentMode, PushConstantRange,
-    ShaderStages, TextureFormat,
+    ShaderStages, StorageTextureAccess, TextureFormat,
 };
 use winit::{
     event::*,
@@ -15,7 +15,7 @@ use winit::{
 
 use wellenbrecher_canvas::{Bgra, Canvas, UserID};
 
-use crate::texture::Texture;
+use crate::texture::{StorageTexture, Texture};
 
 mod texture;
 
@@ -65,10 +65,11 @@ struct State {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     canvas_texture: Texture,
-    uid_map_texture: Texture,
+    uid_map_texture: StorageTexture,
     window: Window,
     bind_group: BindGroup,
     canvas: Canvas,
+    push_constants: Push,
 }
 
 impl State {
@@ -88,7 +89,8 @@ impl State {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::PUSH_CONSTANTS,
+                    features: wgpu::Features::PUSH_CONSTANTS
+                        | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                     limits: wgpu::Limits {
                         max_push_constant_size: std::mem::size_of::<Push>() as u32,
                         ..wgpu::Limits::default().using_resolution(adapter.limits())
@@ -134,10 +136,10 @@ impl State {
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadOnly,
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Uint,
+                        format: TextureFormat::R32Uint,
                     },
                     count: None,
                 },
@@ -153,12 +155,12 @@ impl State {
             Some("canvas_texture"),
         )?;
 
-        let uid_map_texture = Texture::new(
+        let uid_map_texture = StorageTexture::new(
             &device,
-            TextureFormat::R8Uint,
+            TextureFormat::R32Uint,
             canvas.width(),
             canvas.height(),
-            Some("uid_map_texture"),
+            Some("user_id_map"),
         )?;
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -263,6 +265,12 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
+        let push_constants = Push {
+            blend_to: [0.0; 4],
+            user_id_filter: 0,
+            blending: 0.0,
+        };
+
         Ok(Self {
             surface,
             device,
@@ -276,6 +284,7 @@ impl State {
             bind_group,
             window,
             canvas,
+            push_constants,
         })
     }
 
@@ -331,14 +340,101 @@ impl State {
         }
     }
 
-    #[allow(unused_variables)]
     fn input(&mut self, event: &WindowEvent) -> bool {
-        false
+        match event {
+            WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(VirtualKeyCode::Left),
+                        ..
+                    },
+                ..
+            } => {
+                self.push_constants.blending = f32::max(0.0, self.push_constants.blending - 0.1);
+                true
+            }
+            WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(VirtualKeyCode::Right),
+                        ..
+                    },
+                ..
+            } => {
+                self.push_constants.blending = f32::min(1.0, self.push_constants.blending + 0.1);
+                true
+            }
+            WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(VirtualKeyCode::Up),
+                        ..
+                    },
+                ..
+            } => {
+                self.push_constants.user_id_filter =
+                    self.push_constants.user_id_filter.saturating_add(1);
+                info!("Highlighting User: {}", self.push_constants.user_id_filter);
+                true
+            }
+            WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(VirtualKeyCode::Down),
+                        ..
+                    },
+                ..
+            } => {
+                self.push_constants.user_id_filter =
+                    self.push_constants.user_id_filter.saturating_sub(1);
+                info!("Highlighting User: {}", self.push_constants.user_id_filter);
+                true
+            }
+            WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(VirtualKeyCode::R),
+                        ..
+                    },
+                ..
+            } => {
+                self.push_constants.user_id_filter = 0;
+                info!("Highlighting cleared");
+                true
+            }
+            _ => false,
+        }
     }
 
     fn update(&mut self) {}
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.queue.write_texture(
+            self.canvas_texture.texture.as_image_copy(),
+            self.canvas.pixel_byte_slice(),
+            ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(self.canvas.width() * std::mem::size_of::<Bgra>() as u32),
+                rows_per_image: Some(self.canvas.height()),
+            },
+            self.canvas_texture.texture.size(),
+        );
+        self.queue.write_texture(
+            self.uid_map_texture.texture.as_image_copy(),
+            self.canvas.user_id_byte_slice(),
+            ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(self.canvas.width() * std::mem::size_of::<UserID>() as u32),
+                rows_per_image: Some(self.canvas.height()),
+            },
+            self.uid_map_texture.texture.size(),
+        );
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -371,11 +467,7 @@ impl State {
             render_pass.set_push_constants(
                 ShaderStages::FRAGMENT,
                 0,
-                bytemuck::bytes_of(&Push {
-                    blend_to: [0.0; 4],
-                    user_id_filter: 0,
-                    blending: 0.0,
-                }),
+                bytemuck::bytes_of(&self.push_constants),
             );
             render_pass.draw(0..4, 0..1);
         }

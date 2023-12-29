@@ -1,6 +1,6 @@
 @group(0) @binding(0) var canvas: texture_2d<f32>;
 @group(0) @binding(1) var canvas_sampler: sampler;
-@group(0) @binding(2) var user_id_map: texture_2d<u32>;
+@group(0) @binding(2) var user_id_map: texture_storage_2d<r32uint, read>;
 
 struct Push {
     blend_to: vec4<f32>,
@@ -15,7 +15,7 @@ fn main(@location(0) tex_coords: vec2<f32>) -> @location(0) vec4<f32> {
     var blending = 0.0;
     if (push.user_id_filter != u32(0)) {
         let user_id_map_coords = tex_coords * vec2<f32>(textureDimensions(canvas));
-        if (push.user_id_filter != textureLoad(user_id_map, vec2<u32>(user_id_map_coords), 0).x) {
+        if (push.user_id_filter != textureLoad(user_id_map, vec2<u32>(user_id_map_coords)).x) {
             blending = push.blending;
         }
     }

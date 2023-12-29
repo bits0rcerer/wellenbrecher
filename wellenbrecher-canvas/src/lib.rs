@@ -211,10 +211,10 @@ impl Canvas {
 
     #[inline]
     pub fn set_pixel(&self, x: u32, y: u32, color: Bgra, user_id: u32) -> Result<(), CanvasError> {
-        let idx = self.coords_to_index(x, y);
-        if idx >= self.len {
+        if x >= self.width || y >= self.height {
             return Err(CanvasError::PixelOutOfBounds { x, y });
         }
+        let idx = self.coords_to_index(x, y);
 
         match color.a {
             0 => Ok(()),
