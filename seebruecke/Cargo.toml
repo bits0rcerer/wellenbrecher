@@ -18,8 +18,15 @@ clap.workspace = true
 
 winit = "0.28.7"
 wgpu = "0.18"
+egui = "0.24.1"
+egui_plot = "0.24.1"
+egui-wgpu = "0.24.1"
+egui-winit = "0.24.1"
 pollster = "0.3"
 
 rand = "0.8.5"
 bytemuck = "1.14.0"
 bytemuck_derive = "1.5.0"
+
+sys_metrics = "0.2.6"
+human_format = "1.0.3"

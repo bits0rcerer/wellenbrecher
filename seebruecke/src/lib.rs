@@ -1,6 +1,11 @@
-use std::iter;
+use std::sync::Arc;
+use std::time::Instant;
 
 use bytemuck_derive::{Pod, Zeroable};
+use egui::ahash::{HashMap, HashMapExt};
+use egui::mutex::RwLock;
+use egui::{Align2, ViewportId};
+use egui_winit::EventResponse;
 use tracing::{error, info, warn};
 use wgpu::util::DeviceExt;
 use wgpu::{
@@ -17,6 +22,7 @@ use wellenbrecher_canvas::{Bgra, Canvas, UserID};
 
 use crate::texture::{StorageTexture, Texture};
 
+mod pie_chart;
 mod texture;
 
 #[repr(C)]
@@ -58,8 +64,8 @@ impl Vertex {
 
 struct State {
     surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
@@ -70,6 +76,10 @@ struct State {
     bind_group: BindGroup,
     canvas: Canvas,
     push_constants: Push,
+    egui_state: egui_winit::State,
+    egui_context: egui::Context,
+    egui_render_state: egui_wgpu::RenderState,
+    last_rx_bytes: (Instant, u64, f64),
 }
 
 impl State {
@@ -79,11 +89,13 @@ impl State {
         let instance = wgpu::Instance::default();
 
         let surface = unsafe { instance.create_surface(&window) }.unwrap();
-        let adapter = instance
-            .enumerate_adapters(Backends::all())
-            .filter(|a| a.is_surface_supported(&surface))
-            .nth(gpu_index)
-            .expect("Failed to find an appropriate adapter");
+        let adapter = Arc::new(
+            instance
+                .enumerate_adapters(Backends::all())
+                .filter(|a| a.is_surface_supported(&surface))
+                .nth(gpu_index)
+                .expect("Failed to find an appropriate adapter"),
+        );
 
         let (device, queue) = adapter
             .request_device(
@@ -100,6 +112,8 @@ impl State {
             )
             .await
             .expect("Failed to create device");
+        let device = Arc::new(device);
+        let queue = Arc::new(queue);
 
         let surface_format = TextureFormat::Bgra8UnormSrgb;
         let present_mode = PresentMode::AutoVsync;
@@ -271,6 +285,26 @@ impl State {
             blending: 0.0,
         };
 
+        let egui_state = egui_winit::State::new(
+            ViewportId::ROOT,
+            &window,
+            Some(window.scale_factor() as f32),
+            None,
+        );
+        let egui_context = egui::Context::default();
+        let egui_render_state = egui_wgpu::RenderState {
+            adapter,
+            device: device.clone(),
+            queue: queue.clone(),
+            target_format: TextureFormat::R8Unorm,
+            renderer: Arc::new(RwLock::new(egui_wgpu::Renderer::new(
+                device.as_ref(),
+                surface_format,
+                None,
+                1,
+            ))),
+        };
+
         Ok(Self {
             surface,
             device,
@@ -285,6 +319,10 @@ impl State {
             window,
             canvas,
             push_constants,
+            egui_state,
+            egui_context,
+            egui_render_state,
+            last_rx_bytes: (Instant::now(), 0, 0.0f64),
         })
     }
 
@@ -341,6 +379,12 @@ impl State {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
+        let EventResponse { consumed, .. } =
+            self.egui_state.on_window_event(&self.egui_context, event);
+        if consumed {
+            return true;
+        }
+
         match event {
             WindowEvent::KeyboardInput {
                 input:
@@ -413,6 +457,49 @@ impl State {
 
     fn update(&mut self) {}
 
+    fn build_egui(&self, ctx: &egui::Context, mut rx_bits_per_secs: f64) {
+        let pixel_user_map = self
+            .canvas
+            .user_id_slice()
+            .iter()
+            .filter(|&&uid| uid > 0)
+            .fold(HashMap::new(), |mut map, uid| {
+                match map.get_mut(uid) {
+                    Some(pixels) => *pixels += 1,
+                    None => {
+                        map.insert(uid, 1);
+                    }
+                }
+                map
+            });
+
+        let mut traffic = String::default();
+        for unit in ["Bit", "kBit", "MBit", "GBit", "PBit"] {
+            traffic = format!("{rx_bits_per_secs:.1} {unit}");
+            if rx_bits_per_secs < 1000.0 {
+                break;
+            }
+            rx_bits_per_secs /= 1024.0;
+        }
+
+        egui::Window::new("Stats")
+            .anchor(Align2::RIGHT_TOP, [-50.0, 50.0])
+            .default_size([120.0, 30.0])
+            .resizable(true)
+            .movable(true)
+            .default_open(true)
+            .title_bar(false)
+            .show(ctx, |ui| {
+                ui.set_width(ui.available_width());
+                ui.set_height(ui.available_height());
+                ui.colored_label(
+                    egui::Color32::WHITE,
+                    format!("Players: {}", pixel_user_map.len()),
+                );
+                ui.colored_label(egui::Color32::WHITE, format!("Traffic: {traffic}"));
+            });
+    }
+
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         self.queue.write_texture(
             self.canvas_texture.texture.as_image_copy(),
@@ -446,6 +533,58 @@ impl State {
                 label: Some("Render Encoder"),
             });
 
+        let rx_bytes_total: u64 = sys_metrics::network::get_ionets()
+            .expect("unable to get network info")
+            .into_iter()
+            .map(|m| m.rx_bytes)
+            .sum();
+
+        let secs = self.last_rx_bytes.0.elapsed().as_secs_f64();
+        let rx_bits_per_secs = if secs.is_normal() {
+            let rx_bits_per_secs = 8.0 * (rx_bytes_total - self.last_rx_bytes.1) as f64 / secs;
+            self.last_rx_bytes = (Instant::now(), rx_bytes_total, rx_bits_per_secs);
+            rx_bits_per_secs
+        } else {
+            self.last_rx_bytes.2
+        };
+
+        let egui::FullOutput {
+            platform_output,
+            textures_delta,
+            shapes,
+            pixels_per_point,
+            ..
+        } = self
+            .egui_context
+            .run(self.egui_state.take_egui_input(&self.window), |ctx| {
+                self.build_egui(ctx, rx_bits_per_secs)
+            });
+
+        self.egui_state
+            .handle_platform_output(&self.window, &self.egui_context, platform_output);
+
+        let clipped_primitives = self.egui_context.tessellate(shapes, pixels_per_point);
+
+        let scale_factor = self.window.scale_factor() as f32;
+        let screen_descriptor = egui_wgpu::renderer::ScreenDescriptor {
+            size_in_pixels: [self.size.width, self.size.height],
+            pixels_per_point: scale_factor,
+        };
+
+        let mut egui_renderer = self.egui_render_state.renderer.write();
+
+        for (id, image_delta) in &textures_delta.set {
+            egui_renderer.update_texture(&self.device, &self.queue, *id, image_delta);
+        }
+
+        let mut command_buffers = egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &clipped_primitives,
+            &screen_descriptor,
+        );
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -470,30 +609,16 @@ impl State {
                 bytemuck::bytes_of(&self.push_constants),
             );
             render_pass.draw(0..4, 0..1);
+            egui_renderer.render(&mut render_pass, &clipped_primitives, &screen_descriptor);
         }
 
-        self.queue.write_texture(
-            self.canvas_texture.texture.as_image_copy(),
-            self.canvas.pixel_byte_slice(),
-            ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(self.canvas.width() * std::mem::size_of::<Bgra>() as u32),
-                rows_per_image: Some(self.canvas.height()),
-            },
-            self.canvas_texture.texture.size(),
-        );
-        self.queue.write_texture(
-            self.uid_map_texture.texture.as_image_copy(),
-            self.canvas.user_id_byte_slice(),
-            ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(self.canvas.width() * std::mem::size_of::<UserID>() as u32),
-                rows_per_image: Some(self.canvas.height()),
-            },
-            self.uid_map_texture.texture.size(),
-        );
+        for id in &textures_delta.free {
+            egui_renderer.free_texture(id);
+        }
 
-        self.queue.submit(iter::once(encoder.finish()));
+        command_buffers.push(encoder.finish());
+
+        self.queue.submit(command_buffers);
         output.present();
 
         Ok(())
