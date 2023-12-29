@@ -14,7 +14,7 @@ use rummelplatz::io_uring::squeue::{Entry, PushError};
 use rummelplatz::io_uring::types::Fd;
 use rummelplatz::{ControlFlow, RingOperation, SubmissionQueueSubmitter, IORING_CQE_F_MORE};
 use socket2::Socket;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::ring::command_ring::CommandRing;
 use crate::ring::pixel_flut_ring::UserData;
@@ -137,7 +137,14 @@ impl RingOperation for RingCoordination {
                 }
 
                 let socket = unsafe { Socket::from_raw_fd(completion_entry.result()) };
-                let peer_addr = socket.peer_addr().unwrap().as_socket().unwrap();
+
+                let peer_addr = match socket.peer_addr() {
+                    Ok(peer_addr) => peer_addr.as_socket().unwrap(),
+                    Err(e) => {
+                        debug!("connection lost early: {e}");
+                        return (ControlFlow::Continue, Some(RingMessage::NewConnection));
+                    }
+                };
 
                 let (user_id, user_state) = get_or_create_user_state(
                     clients
