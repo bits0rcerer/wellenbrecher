@@ -22,7 +22,6 @@ use wellenbrecher_canvas::{Bgra, Canvas, UserID};
 
 use crate::texture::{StorageTexture, Texture};
 
-mod pie_chart;
 mod texture;
 
 #[repr(C)]

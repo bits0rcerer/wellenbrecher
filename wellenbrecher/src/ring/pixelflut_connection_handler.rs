@@ -116,13 +116,7 @@ impl RingOperation for PixelflutConnectionHandler {
                     "unable to read from connection {}: {e}; closing connection…",
                     connection.address
                 );
-                (
-                    ControlFlow::Warn(eyre::eyre!(
-                        "unable to read from connection {}: {e}",
-                        connection.address
-                    )),
-                    None,
-                )
+                (ControlFlow::Continue, None)
             }
         }
     }
