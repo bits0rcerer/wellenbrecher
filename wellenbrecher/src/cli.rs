@@ -46,7 +46,7 @@ You can get an elevated shell with:
     pub ipv4_mask: Ipv4Addr,
 
     /// IPv6 mask for the bits identifying a player
-    #[arg(long, default_value_t = Ipv6Addr::from([0xffff, 0xffff, 0xffff, 0xffff, 0, 0, 0, 0]))]
+    #[arg(long, default_value_t = Ipv6Addr::from([0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff]))]
     pub ipv6_mask: Ipv6Addr,
 
     /// buffer size per connection in bytes

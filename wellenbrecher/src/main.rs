@@ -112,12 +112,16 @@ fn setup_logging() -> eyre::Result<()> {
 fn configure_firewall(
     connections_per_ip: Option<NonZeroU32>,
     port: u16,
+    ipv4_mask: Ipv4Addr,
+    ipv6_mask: Ipv6Addr,
 ) -> eyre::Result<Option<Arc<ConnectionLimit>>> {
     match connections_per_ip.map(|connections_per_ip| {
         debug!("enforcing connection limit…");
         Arc::new(ConnectionLimit::new(
             port,
             connections_per_ip.get(),
+            ipv4_mask,
+            ipv6_mask,
         ))
     }) {
         None => Ok(None),
@@ -164,7 +168,12 @@ fn main() -> eyre::Result<()> {
         println!("{BANNER}");
     }
 
-    let firewall = configure_firewall(args.connections_per_ip, args.port)?;
+    let firewall = configure_firewall(
+        args.connections_per_ip,
+        args.port,
+        args.ipv4_mask,
+        args.ipv6_mask,
+    )?;
 
     let clients: Arc<RwLock<Vec<Arc<UserState>>>> = Default::default();
 
