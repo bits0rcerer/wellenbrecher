@@ -4,8 +4,15 @@ use rummelplatz::{ControlFlow, RingOperation, SubmissionQueueSubmitter};
 #[derive(Debug)]
 pub struct WriteBufferDrop;
 
+#[derive(Debug)]
+pub enum WriteBufferDropDescriptor {
+    None,
+    Buffer(Box<[u8]>),
+    IoVec(Vec<libc::iovec>),
+}
+
 impl RingOperation for WriteBufferDrop {
-    type RingData = Option<Box<[u8]>>;
+    type RingData = WriteBufferDropDescriptor;
     type SetupError = eyre::Error;
     type TeardownError = eyre::Error;
     type ControlFlowWarn = eyre::Error;

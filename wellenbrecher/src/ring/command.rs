@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use wellenbrecher_canvas::{Bgra, Canvas, CanvasError};
 
-use crate::HELP_TEXT;
+use crate::ring::write_buffer_drop::WriteBufferDropDescriptor;
 
 #[derive(Debug)]
 pub enum Command {
@@ -17,6 +17,12 @@ pub enum Command {
     Offset { x: u32, y: u32 },
 }
 
+#[derive(Copy, Clone, Default, Debug)]
+pub struct StaticReplies {
+    pub help: usize,
+    pub size: usize,
+}
+
 impl Command {
     #[inline]
     pub fn handle_command<D, W: Fn(&mut rummelplatz::io_uring::squeue::Entry, D)>(
@@ -24,36 +30,17 @@ impl Command {
         canvas: &mut Canvas,
         socket_fd: Fd,
         submitter: &mut SubmissionQueueSubmitter<D, W>,
+        static_replies: &mut StaticReplies,
         user_id: u32,
         user_offset: &mut (u32, u32),
     ) -> Result<(), CommandExecutionError> {
         match self {
             Command::Help => {
-                let write =
-                    opcode::Write::new(socket_fd, HELP_TEXT.as_ptr(), HELP_TEXT.len() as u32)
-                        .build()
-                        .user_data(
-                            crate::ring::pixel_flut_ring::UserData::write_buffer_drop(None).into(),
-                        );
-
-                unsafe {
-                    submitter.push_raw(write)?;
-                }
+                static_replies.help += 1;
                 Ok(())
             }
             Command::Size => {
-                let msg = format!("SIZE {} {}\n", canvas.width(), canvas.height())
-                    .into_boxed_str()
-                    .into_boxed_bytes();
-                let write = opcode::Write::new(socket_fd, msg.as_ptr(), msg.len() as u32)
-                    .build()
-                    .user_data(
-                        crate::ring::pixel_flut_ring::UserData::write_buffer_drop(Some(msg)).into(),
-                    );
-
-                unsafe {
-                    submitter.push_raw(write)?;
-                }
+                static_replies.size += 1;
                 Ok(())
             }
             Command::SetPixel { x, y, color } => {
@@ -71,7 +58,10 @@ impl Command {
                 let write = opcode::Write::new(socket_fd, msg.as_ptr(), msg.len() as u32)
                     .build()
                     .user_data(
-                        crate::ring::pixel_flut_ring::UserData::write_buffer_drop(Some(msg)).into(),
+                        crate::ring::pixel_flut_ring::UserData::write_buffer_drop(
+                            WriteBufferDropDescriptor::Buffer(msg),
+                        )
+                        .into(),
                     );
 
                 unsafe {

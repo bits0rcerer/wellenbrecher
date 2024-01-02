@@ -13,18 +13,26 @@ use tracing::{info, warn};
 
 use wellenbrecher_canvas::{Canvas, CanvasError};
 
-use crate::ring::command::CommandExecutionError;
+use crate::ring::command::{CommandExecutionError, StaticReplies};
 use crate::ring::command_ring::{CommandRing, CommandRingError};
 use crate::ring::ring_coordination::UserState;
+use crate::ring::write_buffer_drop::WriteBufferDropDescriptor;
+use crate::{ring, HELP_TEXT};
 
 #[derive(Debug)]
 pub struct PixelflutConnectionHandler {
     canvas: Canvas,
+    size_reply_buffer: Box<[u8]>,
 }
 
 impl PixelflutConnectionHandler {
     pub fn new(canvas: Canvas) -> Self {
-        Self { canvas }
+        Self {
+            size_reply_buffer: format!("SIZE {} {}\n", canvas.width(), canvas.height())
+                .into_boxed_str()
+                .into_boxed_bytes(),
+            canvas,
+        }
     }
 }
 
@@ -59,12 +67,24 @@ impl RingOperation for PixelflutConnectionHandler {
                     connection.command_ring.advance_write_unchecked(n as usize);
                 }
 
+                /*
+                To mitigate DoS attacks using commands that generate significantly more egress traffic
+                than required ingress traffic, we only reply to the first occurrence of the
+                    - HELP (>10x egress)
+                    - SIZE (~ 2x egress)
+                command that yield from one socket read.
+                It should be ok to do that because:
+                    - HELP/SIZE is only issued manually by non-machine players, that are not that fast.
+                    - HELP/SIZE is only issued once for feature/canvas size detection by machines
+                 */
+                let mut static_replies = StaticReplies::default();
                 loop {
                     match connection.command_ring.read_next_command() {
                         Ok(cmd) => match cmd.handle_command(
                             &mut self.canvas,
                             Fd(connection.socket.as_raw_fd()),
                             &mut submitter,
+                            &mut static_replies,
                             connection.user_id,
                             &mut connection.user_offset,
                         ) {
@@ -92,6 +112,50 @@ impl RingOperation for PixelflutConnectionHandler {
                             );
                             drop(connection);
                             return (ControlFlow::Continue, None);
+                        }
+                    }
+                }
+                unsafe {
+                    let mut iovecs = Vec::with_capacity(0);
+                    if static_replies.size > 0 {
+                        if static_replies.size > 8 {
+                            warn!("connection {} from {} might be trying to DoS using SIZE egress amplification",
+                                connection.user_id, connection.address,
+                            )
+                        }
+
+                        iovecs.push(libc::iovec {
+                            iov_base: self.size_reply_buffer.as_ptr() as _,
+                            iov_len: self.size_reply_buffer.len(),
+                        })
+                    }
+                    if static_replies.help > 0 {
+                        if static_replies.help > 8 {
+                            warn!("connection {} from {} might be trying to DoS using HELP egress amplification",
+                                connection.user_id, connection.address,
+                            )
+                        }
+                        iovecs.push(libc::iovec {
+                            iov_base: HELP_TEXT.as_ptr() as _,
+                            iov_len: HELP_TEXT.len(),
+                        })
+                    }
+
+                    if !iovecs.is_empty() {
+                        let writev = opcode::Writev::new(
+                            Fd(connection.socket.as_raw_fd()),
+                            iovecs.as_ptr(),
+                            iovecs.len() as u32,
+                        )
+                        .build()
+                        .user_data(
+                            ring::pixel_flut_ring::UserData::write_buffer_drop(
+                                WriteBufferDropDescriptor::IoVec(iovecs),
+                            )
+                            .into(),
+                        );
+                        if let Err(e) = submitter.push_raw(writev) {
+                            return (ControlFlow::Error(e.into()), None);
                         }
                     }
                 }
