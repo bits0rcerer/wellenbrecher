@@ -6,7 +6,7 @@ A capable [pixelflut](https://github.com/defnull/pixelflut) server written in Ru
 
 **Yes**, but [#1](https://github.com/bits0rcerer/wellenbrecher/issues/1)
 
-#### Comparison
+#### Comparison (out-dated/incomplete)
 
 <details>
   <summary>Test machine</summary>
@@ -78,6 +78,11 @@ Options:
   -h, --help                   Print help
   -V, --version                Print version
   ```
+
+- `Esc` Exit
+- `Up`/`Down` Select a user for highlighting
+- `R` reset highlighting
+- `Left`/`Right` Adjust highlighting strength
 
 ### `gst-wellenbrecher-src`
 

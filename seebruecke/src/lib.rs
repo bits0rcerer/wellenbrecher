@@ -7,10 +7,10 @@ use egui::mutex::RwLock;
 use egui::{Align2, ViewportId};
 use egui_winit::EventResponse;
 use tracing::{error, info, warn};
-use wgpu::util::DeviceExt;
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
-    Backends, BindGroup, CompositeAlphaMode, ImageDataLayout, PresentMode, PushConstantRange,
-    ShaderStages, StorageTextureAccess, TextureFormat,
+    Backends, BindGroup, BufferBindingType, BufferUsages, CompositeAlphaMode, ImageDataLayout,
+    PresentMode, PushConstantRange, ShaderStages, StorageTextureAccess, TextureFormat,
 };
 use winit::{
     event::*,
@@ -37,6 +37,12 @@ struct Push {
     blend_to: [f32; 4],
     user_id_filter: u32,
     blending: f32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Pod, Zeroable)]
+struct FragmentShaderState {
+    last_highlighted_uid: u32,
 }
 
 impl Vertex {
@@ -156,6 +162,36 @@ impl State {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadWrite,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        format: TextureFormat::Rgba8Unorm,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadWrite,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        format: TextureFormat::R32Uint,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
             label: Some("bind_group_layout"),
         });
@@ -176,6 +212,50 @@ impl State {
             Some("user_id_map"),
         )?;
 
+        let secondary_canvas_texture = StorageTexture::new(
+            &device,
+            TextureFormat::Rgba8Unorm,
+            canvas.width(),
+            canvas.height(),
+            Some("secondary_canvas_texture"),
+        )?;
+        queue.write_texture(
+            secondary_canvas_texture.texture.as_image_copy(),
+            vec![0u8; (canvas.width() * canvas.height()) as usize * std::mem::size_of::<Bgra>()]
+                .as_slice(),
+            ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(canvas.width() * std::mem::size_of::<Bgra>() as u32),
+                rows_per_image: Some(canvas.height()),
+            },
+            canvas_texture.texture.size(),
+        );
+
+        let secondary_uid_map_texture = StorageTexture::new(
+            &device,
+            TextureFormat::R32Uint,
+            canvas.width(),
+            canvas.height(),
+            Some("secondary_user_id_map"),
+        )?;
+        queue.write_texture(
+            secondary_uid_map_texture.texture.as_image_copy(),
+            vec![0u8; (canvas.width() * canvas.height()) as usize * std::mem::size_of::<UserID>()]
+                .as_slice(),
+            ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(canvas.width() * std::mem::size_of::<UserID>() as u32),
+                rows_per_image: Some(canvas.height()),
+            },
+            canvas_texture.texture.size(),
+        );
+
+        let fragment_shader_state = device.create_buffer_init(&BufferInitDescriptor {
+            contents: bytemuck::bytes_of(&FragmentShaderState::default()),
+            usage: BufferUsages::STORAGE,
+            label: Some("fragment_shader_state"),
+        });
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
             entries: &[
@@ -190,6 +270,20 @@ impl State {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(&uid_map_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&secondary_canvas_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&secondary_uid_map_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::Buffer(
+                        fragment_shader_state.as_entire_buffer_binding(),
+                    ),
                 },
             ],
             label: Some("bind_group"),
@@ -281,7 +375,7 @@ impl State {
         let push_constants = Push {
             blend_to: [0.0; 4],
             user_id_filter: 0,
-            blending: 0.0,
+            blending: 0.9,
         };
 
         let egui_state = egui_winit::State::new(
