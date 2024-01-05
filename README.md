@@ -120,6 +120,19 @@ gst-launch-1.0 wbsrc ! videoconvert ! autovideosink
 
 The canvas is shared via shared memory
 
+## Live on stage
+
+### 37C3
+
+<details>
+  <summary>37c3 - Saal 3</summary>
+
+<img src="https://github.com/bits0rcerer/wellenbrecher/blob/assets/img/37c3.png?raw=true"
+data-canonical-src="https://github.com/bits0rcerer/wellenbrecher/blob/assets/img/37c3.png?raw=true"
+width="800" />
+
+</details>
+
 # Special thanks to
 
 > /pixelnuke (C server)
