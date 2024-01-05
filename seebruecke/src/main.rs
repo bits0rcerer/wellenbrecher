@@ -6,7 +6,7 @@ use winit::event_loop::EventLoop;
 use winit::window::{Fullscreen, WindowBuilder};
 
 use seebruecke::run;
-use wellenbrecher_canvas::{Bgra, Canvas};
+use wellenbrecher_canvas::Canvas;
 
 mod cli;
 
@@ -80,13 +80,7 @@ fn main() -> eyre::Result<()> {
         return Ok(());
     }
 
-    let canvas = Canvas::open(
-        args.canvas_file_link.as_ref(),
-        true,
-        args.width.get(),
-        args.height.get(),
-        Bgra::from_bw(0),
-    )?;
+    let canvas = Canvas::open(args.canvas_file_link.as_ref(), true, None)?;
 
     pollster::block_on(run(canvas, event_loop, window, args.gpu_index))
 }

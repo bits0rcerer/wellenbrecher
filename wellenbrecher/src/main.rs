@@ -5,21 +5,24 @@
 #![feature(const_mut_refs)]
 #![feature(effects)]
 
+use std::fmt::Debug;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::num::NonZeroU32;
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::raw::c_int;
-use std::sync::{Arc, RwLock};
+use std::path::Path;
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 
 use clap::Parser;
 use core_affinity::CoreId;
 use nftables::helper::NftablesError;
+use shared_memory::ShmemError;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use tracing::{debug, error, info, warn, Level};
 use tracing_subscriber::EnvFilter;
 
-use wellenbrecher_canvas::{Bgra, Canvas};
+use wellenbrecher_canvas::{Bgra, Canvas, CanvasCreateInfo};
 
 use crate::cli::Args;
 use crate::firewall::ConnectionLimit;
@@ -163,6 +166,9 @@ fn main() -> eyre::Result<()> {
     };
 
     let args = cli::Args::parse();
+    if args.remove_canvas {
+        return remove_canvas(args.canvas_file_link);
+    }
 
     if !args.no_banner {
         println!("{BANNER}");
@@ -177,47 +183,54 @@ fn main() -> eyre::Result<()> {
 
     let clients: Arc<RwLock<Vec<Arc<UserState>>>> = Default::default();
 
+    // protect the process of creating or opening the shared memory
+    let canvas_open_lock = Arc::new(Mutex::new(()));
+
     let cores = match core_affinity::get_core_ids() {
         Some(cores) => cores,
         None => print_and_return_error!("unable to get core ids"),
     };
     let mut workers = Vec::new();
 
-    let (fd_rx, primary_core, primary_index) = {
-        let (fd_tx, fd_rx) = std::sync::mpsc::channel();
-        let mut worker_iter = cores
-            .into_iter()
-            .enumerate()
-            .take_while(|(i, _)| args.threads.is_none() || *i < args.threads.unwrap().get());
+    let (fd_rx, primary_core, primary_index) =
+        {
+            let (fd_tx, fd_rx) = std::sync::mpsc::channel();
+            let mut worker_iter = cores
+                .into_iter()
+                .enumerate()
+                .take_while(|(i, _)| args.threads.is_none() || *i < args.threads.unwrap().get());
 
-        let (primary_index, primary_core) = worker_iter.next().unwrap();
-        for (i, core) in worker_iter {
-            let args = args.clone();
-            let fd_tx = fd_tx.clone();
-            workers.push(
-                thread::Builder::new()
-                    .name(format!("Lackey-{i}"))
-                    .spawn(move || secondary_worker(args.io_uring_size, core, i, args, fd_tx))?,
-            );
-        }
+            let (primary_index, primary_core) = worker_iter.next().unwrap();
+            for (i, core) in worker_iter {
+                let args = args.clone();
+                let fd_tx = fd_tx.clone();
+                let canvas_open_lock = canvas_open_lock.clone();
+                workers.push(thread::Builder::new().name(format!("Lackey-{i}")).spawn(
+                    move || lackey(args.io_uring_size, core, i, args, fd_tx, canvas_open_lock),
+                )?);
+            }
 
-        (fd_rx, primary_core, primary_index)
-    };
+            (fd_rx, primary_core, primary_index)
+        };
 
-    thread::Builder::new()
-        .name("Empress".to_string())
-        .spawn(move || {
-            primary_worker(
-                args.io_uring_size,
-                clients,
-                primary_core,
-                primary_index,
-                args,
-                fd_rx,
-            )
-        })?
-        .join()
-        .expect("unable to join Empress thread")?;
+    {
+        let canvas_open_lock = canvas_open_lock.clone();
+        thread::Builder::new()
+            .name("Empress".to_string())
+            .spawn(move || {
+                empress(
+                    args.io_uring_size,
+                    clients,
+                    primary_core,
+                    primary_index,
+                    args,
+                    fd_rx,
+                    canvas_open_lock,
+                )
+            })?
+            .join()
+            .expect("unable to join Empress thread")?;
+    }
 
     for (i, join_handle) in workers.into_iter().enumerate() {
         match join_handle.join() {
@@ -233,13 +246,14 @@ fn main() -> eyre::Result<()> {
     Ok(())
 }
 
-fn primary_worker(
+fn empress(
     ring_size: NonZeroU32,
     clients: Arc<RwLock<Vec<Arc<UserState>>>>,
     core: CoreId,
     index: usize,
     args: Args,
     fd_rx: std::sync::mpsc::Receiver<RawFd>,
+    canvas_open_lock: Arc<Mutex<()>>,
 ) -> eyre::Result<()> {
     let ring = ring::pixel_flut_ring::Ring::new_raw_ring(ring_size)?;
 
@@ -303,21 +317,30 @@ fn primary_worker(
             args.ipv6_mask,
         ),
         args,
+        canvas_open_lock,
     )
 }
 
-fn secondary_worker(
+fn lackey(
     ring_size: NonZeroU32,
     core: CoreId,
     index: usize,
     args: Args,
     fd_tx: std::sync::mpsc::Sender<RawFd>,
+    canvas_open_lock: Arc<Mutex<()>>,
 ) -> eyre::Result<()> {
     let ring = ring::pixel_flut_ring::Ring::new_raw_ring(ring_size)?;
     fd_tx.send(ring.as_raw_fd())?;
     drop(fd_tx);
 
-    worker(core, index, ring, RingCoordination::lackey(), args)
+    worker(
+        core,
+        index,
+        ring,
+        RingCoordination::lackey(),
+        args,
+        canvas_open_lock,
+    )
 }
 
 fn worker(
@@ -326,6 +349,7 @@ fn worker(
     ring: rummelplatz::io_uring::IoUring,
     coordination: RingCoordination,
     args: Args,
+    canvas_open_lock: Arc<Mutex<()>>,
 ) -> eyre::Result<()> {
     if core_affinity::set_for_current(core) {
         debug!("[worker: {index}] bound to core {core:?}");
@@ -333,15 +357,30 @@ fn worker(
         warn!("[worker: {index}] unable to bind core {core:?}");
     }
 
-    let canvas = match Canvas::open(
-        args.canvas_file_link.as_ref(),
-        args.keep_canvas_file_link,
-        args.width.get(),
-        args.height.get(),
-        Bgra::default(),
-    ) {
-        Ok(canvas) => canvas,
-        Err(e) => return Err(e.into()),
+    let canvas = {
+        let lock = canvas_open_lock
+            .lock()
+            .expect("unable to lock canvas_open_lock");
+
+        let canvas = match Canvas::open(
+            args.canvas_file_link.as_ref(),
+            true,
+            Some(CanvasCreateInfo {
+                width: args.width.get(),
+                height: args.height.get(),
+                initial_canvas: vec![
+                    Bgra::default();
+                    (args.width.get() * args.height.get()) as usize
+                ]
+                .into_boxed_slice(),
+            }),
+        ) {
+            Ok(canvas) => canvas,
+            Err(e) => return Err(e.into()),
+        };
+
+        drop(lock);
+        canvas
     };
 
     let mut ring = ring::pixel_flut_ring::Ring::new(
@@ -354,4 +393,25 @@ fn worker(
 
     ring.run::<eyre::Error, eyre::Error, eyre::Error>()?;
     Ok(())
+}
+
+fn remove_canvas<P: AsRef<Path> + Debug + Clone>(path: P) -> eyre::Result<()> {
+    match shared_memory::ShmemConf::new().flink(path.clone()).open() {
+        Ok(mut shmem) => {
+            shmem.set_owner(true);
+            drop(shmem);
+            Ok(())
+        }
+        Err(ShmemError::LinkDoesNotExist) => Ok(()),
+        Err(e) => {
+            eprintln!("unable to remove shared canvas: {e:?}");
+            eprintln!(
+                "you can try to remove it manually by executing:\n\trm /dev/shm$(cat {:?}) {:?}",
+                path.clone(),
+                path.clone()
+            );
+
+            Err(e.into())
+        }
+    }
 }

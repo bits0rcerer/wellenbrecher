@@ -1,3 +1,8 @@
+#![feature(fn_traits)]
+#![feature(unboxed_closures)]
+
+extern crate core;
+
 use std::fmt::{Debug, Formatter};
 use std::path::Path;
 use std::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
@@ -101,6 +106,28 @@ pub struct Canvas {
     user_id_map: *mut UserID,
 }
 
+pub struct CanvasCreateInfo {
+    pub width: u32,
+    pub height: u32,
+    pub initial_canvas: Box<[Bgra]>,
+}
+
+impl Debug for CanvasCreateInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        #[allow(dead_code)]
+        #[derive(Debug)]
+        struct CanvasCreateInfo {
+            width: u32,
+            height: u32,
+        }
+        CanvasCreateInfo {
+            width: self.width,
+            height: self.height,
+        }
+        .fmt(f)
+    }
+}
+
 unsafe impl Send for Canvas {}
 
 impl Debug for Canvas {
@@ -137,53 +164,106 @@ impl Canvas {
     pub fn open(
         canvas_path: &Path,
         persistent_canvas: bool,
-        width: u32,
-        height: u32,
-        fill: Bgra,
+        create_info: Option<CanvasCreateInfo>,
     ) -> Result<Self, CanvasError> {
-        let canvas_size = (width * height) as usize * std::mem::size_of::<Bgra>();
-        let uid_map_size = (width * height) as usize * std::mem::size_of::<UserID>();
-        let size = canvas_size + uid_map_size;
+        let header_size = 2 * std::mem::size_of::<u32>();
 
-        let shared_memory = shared_memory::ShmemConf::new()
-            .size(size)
-            .flink(canvas_path)
-            .create()
-            .map(|m| {
-                unsafe {
-                    (*slice_from_raw_parts_mut(m.as_ptr() as *mut Bgra, (width * height) as usize))
-                        .fill(fill);
+        match create_info {
+            Some(CanvasCreateInfo {
+                width,
+                height,
+                initial_canvas,
+            }) => {
+                let canvas_size = (width * height) as usize * std::mem::size_of::<Bgra>();
+                let uid_map_size = (width * height) as usize * std::mem::size_of::<UserID>();
+                let size = header_size + canvas_size + uid_map_size;
+
+                match shared_memory::ShmemConf::new()
+                    .size(size)
+                    .flink(canvas_path)
+                    .create()
+                    .map(|m| {
+                        unsafe {
+                            (m.as_ptr() as *mut u32).write(width);
+                            (m.as_ptr() as *mut u32).add(1).write(height);
+
+                            let slice = &mut *slice_from_raw_parts_mut(
+                                m.as_ptr().add(header_size) as *mut Bgra,
+                                (width * height) as usize,
+                            );
+
+                            slice.copy_from_slice(initial_canvas.as_ref());
+                        }
+                        m
+                    }) {
+                    Ok(mut shmem) => {
+                        shmem.set_owner(!persistent_canvas);
+
+                        Ok(Canvas {
+                            width,
+                            height,
+                            len: (width * height) as usize,
+                            data: unsafe { shmem.as_ptr().add(header_size) } as *mut _,
+                            user_id_map: unsafe { shmem.as_ptr().add(header_size + canvas_size) }
+                                as *mut _,
+                            shared_memory: shmem,
+                        })
+                    }
+                    Err(ShmemError::LinkExists) => {
+                        let canvas = Self::open(canvas_path, persistent_canvas, None)?;
+                        if canvas.width != width || canvas.height != height {
+                            error!("specified canvas dimensions ({width}x{height}) differ from shared memory canvas dimensions ({}x{})",
+                                canvas.width, canvas.height);
+                            return Err(CanvasError::InvalidSize);
+                        }
+
+                        Ok(canvas)
+                    }
+                    Err(e) => return Err(e.into()),
                 }
-                m
-            });
-        let shared_memory = match shared_memory {
-            Ok(m) => Ok(m),
-            Err(ShmemError::LinkExists) => shared_memory::ShmemConf::new()
-                .size(size)
-                .flink(canvas_path)
-                .open(),
-            Err(e) => Err(e),
-        };
-        let mut shared_memory = match shared_memory {
-            Ok(m) => m,
-            Err(e) => {
-                error!("unable to open or create canvas {:?}: {e}", canvas_path);
-                return Err(e.into());
             }
-        };
+            None => {
+                let (width, height) = unsafe {
+                    let shmem_header = shared_memory::ShmemConf::new()
+                        .size(header_size)
+                        .flink(canvas_path)
+                        .open()?;
 
-        // shared memory will be destroyed when owner is dropped
-        // in case we want to keep the canvas around, we disown ourself
-        shared_memory.set_owner(shared_memory.is_owner() && !persistent_canvas);
+                    if shmem_header.len() < header_size {
+                        error!("shared memory appears to have an invalid size (required: >{header_size}, actual {})", shmem_header.len());
+                        return Err(CanvasError::InvalidSize);
+                    }
 
-        Ok(Canvas {
-            width,
-            height,
-            len: (width * height) as usize,
-            data: shared_memory.as_ptr() as *mut _,
-            user_id_map: unsafe { shared_memory.as_ptr().add(canvas_size) } as *mut _,
-            shared_memory,
-        })
+                    let ptr = shmem_header.as_ptr() as *const u32;
+                    (ptr.read(), ptr.add(1).read())
+                };
+
+                let canvas_size = (width * height) as usize * std::mem::size_of::<Bgra>();
+                let uid_map_size = (width * height) as usize * std::mem::size_of::<UserID>();
+                let size = header_size + canvas_size + uid_map_size;
+
+                let mut shmem = shared_memory::ShmemConf::new()
+                    .size(size)
+                    .flink(canvas_path)
+                    .open()?;
+
+                if shmem.len() != size {
+                    error!("shared memory appears to have an invalid size (required: {size}, actual {})", shmem.len());
+                    return Err(CanvasError::InvalidSize);
+                }
+
+                shmem.set_owner(!persistent_canvas);
+
+                Ok(Canvas {
+                    width,
+                    height,
+                    len: (width * height) as usize,
+                    data: unsafe { shmem.as_ptr().add(header_size) } as *mut _,
+                    user_id_map: unsafe { shmem.as_ptr().add(header_size + canvas_size) } as *mut _,
+                    shared_memory: shmem,
+                })
+            }
+        }
     }
 
     #[inline]
@@ -285,6 +365,8 @@ impl Canvas {
 pub enum CanvasError {
     #[error("pixel ({x}, {y}) out of bounds")]
     PixelOutOfBounds { x: u32, y: u32 },
+    #[error("invalid shared memory size for specified canvas")]
+    InvalidSize,
     #[error("mapping error: {0}")]
     Mapping(#[from] ShmemError),
 }

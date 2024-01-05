@@ -45,6 +45,8 @@ A capable [pixelflut](https://github.com/defnull/pixelflut) server written in Ru
 
 ¹[`tsunami`](https://github.com/bits0rcerer/tsunami) - my pixelflut client
 
+## What's in the box?
+
 ### `wellenbrecher`
 
 The **core**, handling connections and processing commands.
@@ -53,14 +55,23 @@ The **core**, handling connections and processing commands.
 Usage: wellenbrecher [OPTIONS]
 
 Options:
-      --width <WIDTH>          Canvas width [default: 1280]
-      --height <HEIGHT>        Canvas height [default: 720]
-  -n, --threads <THREADS>      Limit the number of OS threads
-  -p, --port <PORT>            Port pixelflut will run on [default: 1337]
-  -c, --connections-per-ip <CONNECTIONS_PER_IP> Max connections per ip
+      --width <WIDTH>       Canvas width [env: CANVAS_WIDTH=] [default: 1280]
+      --height <HEIGHT>     Canvas height [env: CANVAS_HEIGHT=] [default: 720]
+  -n, --threads <THREADS>   Limit the number of OS threads [env: WELLENBRECHER_THREAD_LIMIT=]
+  -c, --connections-per-ip <CONNECTIONS_PER_IP> Limit connections per ip
   ...
-  -h, --help                    Print help
+  -h, --help
   ...
+```
+
+💡
+Wellenbrecher creates a shared memory region that is accessed by all components to share the canvas.
+This shared memory region is persistent in RAM.
+
+You can remove the canvas (and free the memory) with:
+
+```bash
+wellenbrecher --remove-canvas [--canvas-file-link <CANVAS_FILE_LINK>]
 ```
 
 ### `seebruecke`
@@ -71,12 +82,12 @@ Frontend to view the canvas.
 Usage: seebruecke [OPTIONS]
 
 Options:
-      --width <WIDTH>          Canvas width [default: 1280]
-      --height <HEIGHT>        Canvas height [default: 720]
-      --gpu-index <GPU_INDEX>  GPU Index [default: 0]
-      --list-gpus              List available GPUs
-  -h, --help                   Print help
-  -V, --version                Print version
+      --gpu-index <GPU_INDEX>   GPU Index [env: SEEBRUECKE_GPU=] [default: 0]
+      --list-gpus               List available GPUs
+  -f, --fullscreen              Start in fullscreen mode [env: SEEBRUECKE_FULLSCREEN=]
+  -l, --canvas-file-link <CANVAS_FILE_LINK> 
+          Canvas shared memory file link [env: WELLENBRECHER_CANVAS_FLINK=] [default: /tmp/wellenbrecher-canvas]
+  -h, --help
   ```
 
 - `Esc` Exit

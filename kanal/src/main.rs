@@ -2,7 +2,7 @@ use clap::Parser;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
-use wellenbrecher_canvas::{Bgra, Canvas};
+use wellenbrecher_canvas::Canvas;
 
 mod cli;
 
@@ -42,13 +42,7 @@ fn main() -> eyre::Result<()> {
 
     let args = cli::Args::parse();
 
-    let _canvas = Canvas::open(
-        args.canvas_file_link.as_ref(),
-        true,
-        args.width.get(),
-        args.height.get(),
-        Bgra::from_bw(0),
-    )?;
+    let _canvas = Canvas::open(args.canvas_file_link.as_ref(), true, None)?;
 
     match &args.command {
         _ => todo!(),

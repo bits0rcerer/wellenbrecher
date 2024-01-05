@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use gst::glib;
+use gst::glib::bitflags::Flags;
 use gst::glib::once_cell::sync::Lazy;
 use gst::prelude::{ElementExt, ParamSpecBuilderExt, ToValue};
 use gst::subclass::prelude::{
@@ -232,16 +233,15 @@ impl BaseSrcImpl for WellenbrecherSrc {
         let mut state = self.state.lock().unwrap();
 
         if state.canvas.is_none() {
-            let _ = state.canvas.insert(
-                Canvas::open(
-                    settings.flink.as_path(),
-                    false,
-                    settings.width,
-                    settings.height,
-                    Bgra::from_bw(0),
-                )
-                .expect("unable to open shared memory"),
-            );
+            let canvas = Canvas::open(settings.flink.as_path(), false, None)
+                .expect("unable to open shared memory");
+
+            if canvas.width() != settings.width || canvas.width() != settings.height {
+                panic!("specified canvas dimensions ({}x{}) do not match shared canvas dimensions ({}x{})",
+                       canvas.width(), canvas.height(), settings.width, settings.height);
+            }
+
+            let _ = state.canvas.insert(canvas);
         }
 
         gst::debug!(CAT, imp: self, "Opened shared memory canvas {:?}", settings.flink);
