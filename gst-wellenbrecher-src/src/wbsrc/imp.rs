@@ -4,7 +4,6 @@ use std::sync::Mutex;
 
 use gst::glib;
 use gst::glib::bitflags::Flags;
-use gst::glib::once_cell::sync::Lazy;
 use gst::prelude::{ElementExt, ParamSpecBuilderExt, ToValue};
 use gst::subclass::prelude::{
     ElementImpl, GstObjectImpl, ObjectImpl, ObjectImplExt, ObjectSubclass, ObjectSubclassExt,
@@ -12,6 +11,7 @@ use gst::subclass::prelude::{
 use gst_base::prelude::BaseSrcExt;
 use gst_base::subclass::prelude::{BaseSrcImpl, BaseSrcImplExt};
 
+use once_cell::sync::Lazy;
 use wellenbrecher_canvas::{Bgra, Canvas};
 
 static CAT: Lazy<gst::DebugCategory> = Lazy::new(|| {

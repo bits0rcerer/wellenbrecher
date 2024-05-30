@@ -12,13 +12,15 @@ use libc::c_int;
 use rummelplatz::io_uring::opcode;
 use rummelplatz::io_uring::squeue::{Entry, PushError};
 use rummelplatz::io_uring::types::Fd;
-use rummelplatz::{ControlFlow, RingOperation, SubmissionQueueSubmitter, IORING_CQE_F_MORE};
+use rummelplatz::{ControlFlow, RingOperation, SubmissionQueueSubmitter};
 use socket2::Socket;
 use tracing::{debug, error, info};
 
 use crate::ring::command_ring::CommandRing;
 use crate::ring::pixel_flut_ring::UserData;
 use crate::ring::pixelflut_connection_handler::Connection;
+
+const IORING_CQE_F_MORE: u32 = 1u32 << 1;
 
 #[derive(Debug)]
 pub enum RingMessage {
